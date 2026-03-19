@@ -1,0 +1,4 @@
+Parámetro,Valor Teórico,Nota para YAFS
+Resolución/FPS,1280x720 @ 30fps,Define la tasa de llegada de mensajes.
+Bitrate (H.264),3.5 - 5 Mbps,message_size del flujo de video.
+Latencia de captura,10 - 30 ms,Retraso interno del sensor de la cámara.

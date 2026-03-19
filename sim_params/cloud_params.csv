@@ -1,0 +1,4 @@
+Parámetro,Valor Estimado,Función en YAFS
+Escritura en Disco (Storage),10 - 30 ms,Tiempo para confirmar el guardado del video.
+Procesamiento de DB,5 - 15 ms,Registro de entrada/salida del vehículo.
+Latencia de Respuesta,50 - 100 ms,Tiempo total desde que el Cloud recibe hasta que responde.

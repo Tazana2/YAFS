@@ -1,0 +1,6 @@
+Recurso / Tarea,Uso / Latencia,Impacto en la Simulación
+CPU (Inferencia YOLOv8n),90% - 95%,El Service Time por frame es de ~450ms.
+CPU (Re-encapsulado/Upload),15% - 20%,Tarea paralela para enviar el video a la nube.
+RAM (Sistema + YOLO),600 MB - 800 MB,Espacio ocupado en el nodo Fog.
+Latencia de Inferencia,450 ms / frame,"Tiempo que tarda en ""pensar"" si hay un carro."
+Latencia de Buffer,100 - 200 ms,Tiempo de espera mientras el video se procesa.

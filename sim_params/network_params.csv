@@ -1,0 +1,4 @@
+Enlace,Ancho de Banda (BW),Latencia (PR),Carga de Datos
+Edge → Fog,1 Gbps (Ethernet),1 - 5 ms,Video crudo (4 Mbps).
+Fog → Cloud (Metadata),10 - 100 Mbps,40 - 80 ms,JSON pequeño (2 KB).
+Fog → Cloud (Video),Subida Internet,50 - 120 ms,Stream constante (4 Mbps).
