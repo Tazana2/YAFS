@@ -33,9 +33,19 @@ dependencies = [
     "matplotlib>=3.10.8",
 ]
 
-[tool.setuptools]
-package-dir = { "" = "src" }
+[project.scripts]
+fog_simulation = "fog_simulation.main:main"
 
-[tool.setuptools.packages.find]
-where = ["src"]
-exclude = ["*.tests", "*.tests.*", "tests.*", "tests"]
+[tool.setuptools]
+# Map the default root to src/ (for yafs) and fog_simulation explicitly to its own dir.
+package-dir = { "" = "src", "fog_simulation" = "fog_simulation" }
+packages = [
+    "yafs",
+    "fog_simulation",
+    "fog_simulation.topology",
+    "fog_simulation.applications",
+    "fog_simulation.recording",
+    "fog_simulation.visualization",
+    "fog_simulation.simulation",
+    "fog_simulation.analysis",
+]
