@@ -34,11 +34,11 @@ def analyze_results(results_path, nodes_info: dict):
         print(f"❌ Error leyendo CSV: {exc}")
         return
 
-    print(f"📊 Total de mensajes transmitidos : {len(df_links)}")
-    print(f"📊 Total de peticiones procesadas : {len(df_messages)}")
+    print(f"Total de mensajes transmitidos : {len(df_links)}")
+    print(f"Total de peticiones procesadas : {len(df_messages)}")
 
     if len(df_messages) == 0:
-        print("⚠️  Sin datos de procesamiento.")
+        print("  Sin datos de procesamiento.")
         return
 
     camera_nodes = [n for n, a in nodes_info.items() if a["type"] == "edge"]
@@ -99,8 +99,8 @@ def analyze_results(results_path, nodes_info: dict):
         cf = link_count(camera_nodes, fog_nodes) + link_count(fog_nodes, camera_nodes)
         fc = link_count(fog_nodes, cloud_nodes)  + link_count(cloud_nodes, fog_nodes)
 
-        print(f"\n📡 Edge ↔ Fog   : {cf:,} transmisiones")
-        print(f"📡 Fog  ↔ Cloud : {fc:,} transmisiones")
+        print(f"\n Edge ↔ Fog   : {cf:,} transmisiones")
+        print(f" Fog  ↔ Cloud : {fc:,} transmisiones")
         if cf > 0:
             ratio = fc / cf
             print(f"   Relación Cloud/Edge        : {ratio:.2%} (reducción por inferencia)")

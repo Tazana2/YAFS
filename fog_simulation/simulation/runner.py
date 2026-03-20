@@ -55,7 +55,7 @@ def run_simulation(topology, stop_time: int = 50_000, recorder=None):
     print("INICIANDO SIMULACION — ESCENARIO URBANO MULTIAPP")
     print("=" * 70)
 
-    results_path = Path("results_smart_city")
+    results_path = Path("results_fog_simulation")
     results_path.mkdir(exist_ok=True)
 
     app_video = create_video_analytics_app()
@@ -159,8 +159,8 @@ def run_simulation(topology, stop_time: int = 50_000, recorder=None):
         recorder.sim_until = stop_time
         sim.env.process(recorder.snapshot_generator(sim))
         total_frames = stop_time // recorder.snapshot_interval
-        print(f"\n📷 Grabación activada: ~{total_frames} frames "
-              f"(intervalo={recorder.snapshot_interval})")
+        print(f"\nGrabación activada: ~{total_frames} frames "
+                f"(intervalo={recorder.snapshot_interval})")
 
     # ── Ejecución ─────────────────────────────────────────────────────────
     print(f"\nTiempo de simulacion: {stop_time:,} ut  (≈ {stop_time/1000:.0f} s reales)")

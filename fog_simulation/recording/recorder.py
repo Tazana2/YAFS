@@ -299,17 +299,17 @@ class SimulationRecorder:
         )
 
         nx.draw_networkx_nodes(G, self.draw_positions, nodelist=self.edge_nodes,
-                               node_color=edge_c, cmap=cm.Blues, vmin=0, vmax=1,
-                               node_size=edge_sizes, node_shape="o",
-                               edgecolors="#2b5f68", linewidths=1.3, ax=ax)
+                                node_color=edge_c, cmap=cm.Blues, vmin=0, vmax=1,
+                                node_size=edge_sizes, node_shape="o",
+                                edgecolors="#2b5f68", linewidths=1.3, ax=ax)
         nx.draw_networkx_nodes(G, self.draw_positions, nodelist=self.fog_nodes,
-                               node_color=fog_c, cmap=cm.YlOrBr, vmin=0, vmax=1,
-                               node_size=fog_sizes, node_shape="s",
-                               edgecolors="#8f642a", linewidths=2.0, ax=ax)
+                                node_color=fog_c, cmap=cm.YlOrBr, vmin=0, vmax=1,
+                                node_size=fog_sizes, node_shape="s",
+                                edgecolors="#8f642a", linewidths=2.0, ax=ax)
         nx.draw_networkx_nodes(G, self.draw_positions, nodelist=self.cloud_nodes,
-                               node_color=cloud_c, cmap=cm.Reds, vmin=0, vmax=1,
-                               node_size=cloud_sizes, node_shape="D",
-                               edgecolors="#7f2b2b", linewidths=2.1, ax=ax)
+                                node_color=cloud_c, cmap=cm.Reds, vmin=0, vmax=1,
+                                node_size=cloud_sizes, node_shape="D",
+                                edgecolors="#7f2b2b", linewidths=2.1, ax=ax)
 
         important = {n: self.nodes_info[n]["name"] for n in self.fog_nodes + self.cloud_nodes}
         edge_lbl  = {n: str(n) for n in self.edge_nodes}
@@ -392,13 +392,13 @@ class SimulationRecorder:
             f" {top_val:,} mensajes"
         )
         ax2.text(0.05, 0.97, stats, transform=ax2.transAxes,
-                 fontsize=9.2, verticalalignment="top", fontfamily="monospace",
-                 color="#253341",
-                 bbox=dict(boxstyle="round,pad=0.6", facecolor="#ffffff",
-                           edgecolor="#b5c0c9", alpha=0.98))
+                    fontsize=9.2, verticalalignment="top", fontfamily="monospace",
+                    color="#253341",
+                    bbox=dict(boxstyle="round,pad=0.6", facecolor="#ffffff",
+                            edgecolor="#b5c0c9", alpha=0.98))
 
         fig.suptitle("Edge / Fog / Cloud Smart City Simulation - YAFS",
-                     fontsize=15, fontweight="bold", color="#1f2a36", y=0.99)
+                        fontsize=15, fontweight="bold", color="#1f2a36", y=0.99)
         fig.patch.set_facecolor("#f4f6f8")
         fig.subplots_adjust(left=0.02, right=0.985, bottom=0.07, top=0.94, wspace=0.06)
 
@@ -418,8 +418,8 @@ class SimulationRecorder:
             if hasattr(sim, "until") and sim.until:
                 self.sim_until = sim.until
             self.capture_frame(sim.env.now, sim)
-            print(f"   📷 Frame {self.frame_count:3d} capturado"
-                  f"  [t={sim.env.now:,.0f}]", flush=True)
+            print(f"   Frame {self.frame_count:3d} capturado"
+                    f"  [t={sim.env.now:,.0f}]", flush=True)
 
     # ------------------------------------------------------------------
     # Ensamblado del video
@@ -452,21 +452,21 @@ class SimulationRecorder:
             if codec == "h264_vaapi":
                 cmd = (
                     ["ffmpeg", "-y",
-                     "-vaapi_device", "/dev/dri/renderD128",
-                     "-framerate", str(fps),
-                     "-i", frames_pattern]
+                        "-vaapi_device", "/dev/dri/renderD128",
+                        "-framerate", str(fps),
+                        "-i", frames_pattern]
                     + extra
                     + ["-c:v", codec, str(candidate_path)]
                 )
             else:
                 cmd = (
                     ["ffmpeg", "-y",
-                     "-framerate", str(fps),
-                     "-i", frames_pattern]
+                        "-framerate", str(fps),
+                        "-i", frames_pattern]
                     + extra
                     + ["-c:v", codec,
-                       "-pix_fmt", "yuv420p",
-                       str(candidate_path)]
+                        "-pix_fmt", "yuv420p",
+                        str(candidate_path)]
                 )
 
             try:
@@ -479,7 +479,7 @@ class SimulationRecorder:
                 else:
                     err = next(
                         (l for l in result.stderr.splitlines()
-                         if any(k in l for k in ("Error", "Unknown", "not found"))),
+                            if any(k in l for k in ("Error", "Unknown", "not found"))),
                         "",
                     )
                     print(f"   ↳ '{codec}' no disponible: {err.strip()}")
