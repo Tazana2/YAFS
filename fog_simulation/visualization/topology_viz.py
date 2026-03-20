@@ -1,24 +1,25 @@
 """
-Visualización estática de la topología del sistema de parqueaderos.
+Visualizacion estatica de topologia para el escenario smart city.
 
 Capas
 -----
-  EDGE  : Cámaras IP (círculos verdes).
-  FOG   : Raspberry Pi 4 (cuadrados naranjas).
-  CLOUD : Servidores cloud (diamantes rojos).
+    EDGE  : Cámaras IP (círculos verdes).
+    FOG   : Raspberry Pi 4 (cuadrados naranjas).
+    CLOUD : Servidores cloud (diamantes rojos).
 
 Flujos representados
 --------------------
-  Azul punteado  — Cámara → RPi4 (video crudo, Flujos A y B).
-  Naranja        — RPi4 ↔ RPi4 (WAN de respaldo).
-  Rojo punteado  — RPi4 → Cloud (JSON + video almacenado).
-  Morado         — Cloud ↔ Cloud (datacenter).
+    Azul punteado  — Cámara → RPi4 (video crudo, Flujos A y B).
+    Naranja        — RPi4 ↔ RPi4 (WAN de respaldo).
+    Rojo punteado  — RPi4 → Cloud (JSON + video almacenado).
+    Morado         — Cloud ↔ Cloud (datacenter).
 """
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle
+from matplotlib.patches import FancyBboxPatch
+from matplotlib.lines import Line2D
 import networkx as nx
 
 
@@ -39,7 +40,62 @@ def visualize_topology(topology, positions, nodes_info, save_path=None):
     fog_nodes    = [n for n, a in nodes_info.items() if a["type"] == "fog"]
     cloud_nodes  = [n for n, a in nodes_info.items() if a["type"] == "cloud"]
 
-    fig, ax = plt.subplots(figsize=(16, 12))
+    plt.rcParams.update({
+        "font.family": "DejaVu Sans",
+        "font.size": 10,
+        "axes.titlesize": 17,
+        "axes.titleweight": "semibold",
+    })
+
+    fig, ax = plt.subplots(figsize=(16, 12), facecolor="#f4f6f8")
+    ax.set_facecolor("#eef2f5")
+
+    colors = {
+        "edge_node": "#5a9aa8",
+        "edge_border": "#2b5f68",
+        "fog_node": "#d2a15a",
+        "fog_border": "#8e642a",
+        "cloud_node": "#c76262",
+        "cloud_border": "#7f2b2b",
+        "edge_link": "#2f6f8f",
+        "fog_link": "#8f6b32",
+        "cloud_link": "#a54141",
+        "dc_link": "#5d5776",
+    }
+
+    # Reubica nodos en columnas por capa para evitar cruces excesivos.
+    def layered_positions(nodes, x_pos, y_bottom=0.12, y_top=0.88):
+        if not nodes:
+            return {}
+        nodes_sorted = sorted(nodes, key=lambda nid: positions.get(nid, (0.0, 0.0))[1], reverse=True)
+        if len(nodes_sorted) == 1:
+            return {nodes_sorted[0]: (x_pos, (y_bottom + y_top) / 2)}
+        ys = [y_top - i * ((y_top - y_bottom) / (len(nodes_sorted) - 1)) for i in range(len(nodes_sorted))]
+        return {node: (x_pos, yv) for node, yv in zip(nodes_sorted, ys)}
+
+    draw_pos = {}
+    draw_pos.update(layered_positions(camera_nodes, 0.18, 0.10, 0.90))
+    draw_pos.update(layered_positions(fog_nodes, 0.50, 0.12, 0.88))
+    draw_pos.update(layered_positions(cloud_nodes, 0.82, 0.18, 0.82))
+
+    def draw_lane(x, y, w, h, label, face, edge):
+        lane = FancyBboxPatch(
+            (x, y),
+            w,
+            h,
+            boxstyle="round,pad=0.006,rounding_size=0.01",
+            facecolor=face,
+            edgecolor=edge,
+            linewidth=1.2,
+            alpha=0.9,
+            zorder=0,
+        )
+        ax.add_patch(lane)
+        ax.text(x + 0.015, y + h - 0.03, label, fontsize=10, fontweight="bold", color="#263341")
+
+    draw_lane(0.05, 0.05, 0.24, 0.90, "EDGE", "#dde8ee", "#8aa0af")
+    draw_lane(0.37, 0.05, 0.26, 0.90, "FOG", "#ece4d6", "#ad9468")
+    draw_lane(0.69, 0.05, 0.24, 0.90, "CLOUD", "#ebdddf", "#aa7f7f")
 
     # ── Filtro de listas de aristas ────────────────────────────────────────
     def edges_of(src_set, dst_set):
@@ -47,74 +103,69 @@ def visualize_topology(topology, positions, nodes_info, save_path=None):
                 if u in src_set and v in dst_set]
 
     # Cámara → RPi4 (Flujos A y B)
-    nx.draw_networkx_edges(G, positions,
-                           edgelist=edges_of(camera_nodes, fog_nodes)
-                                  + edges_of(fog_nodes, camera_nodes),
-                           alpha=0.45, width=2, edge_color="steelblue",
-                           style="dashed")
+    nx.draw_networkx_edges(G, draw_pos,
+                        edgelist=edges_of(camera_nodes, fog_nodes)
+                                + edges_of(fog_nodes, camera_nodes),
+            alpha=0.75, width=2.4, edge_color=colors["edge_link"],
+                style="dashed", connectionstyle="arc3,rad=0.05")
     # RPi4 ↔ RPi4 (WAN)
-    nx.draw_networkx_edges(G, positions,
-                           edgelist=edges_of(fog_nodes, fog_nodes),
-                           alpha=0.5, width=3, edge_color="orange")
+    nx.draw_networkx_edges(G, draw_pos,
+                        edgelist=edges_of(fog_nodes, fog_nodes),
+        alpha=0.78, width=2.6, edge_color=colors["fog_link"], connectionstyle="arc3,rad=0.08")
     # RPi4 → Cloud (Flujos A y B)
-    nx.draw_networkx_edges(G, positions,
-                           edgelist=edges_of(fog_nodes, cloud_nodes)
-                                  + edges_of(cloud_nodes, fog_nodes),
-                           alpha=0.65, width=3, edge_color="crimson",
-                           style="dotted")
+    nx.draw_networkx_edges(G, draw_pos,
+                        edgelist=edges_of(fog_nodes, cloud_nodes)
+                                + edges_of(cloud_nodes, fog_nodes),
+            alpha=0.8, width=3.0, edge_color=colors["cloud_link"],
+                style="dotted", connectionstyle="arc3,rad=-0.05")
     # Cloud ↔ Cloud (datacenter)
-    nx.draw_networkx_edges(G, positions,
-                           edgelist=edges_of(cloud_nodes, cloud_nodes),
-                           alpha=0.75, width=4, edge_color="mediumpurple")
+    nx.draw_networkx_edges(G, draw_pos,
+                        edgelist=edges_of(cloud_nodes, cloud_nodes),
+        alpha=0.8, width=3.0, edge_color=colors["dc_link"], connectionstyle="arc3,rad=0.1")
 
     # ── Nodos ─────────────────────────────────────────────────────────────
-    nx.draw_networkx_nodes(G, positions, nodelist=camera_nodes,
-                           node_color="lightgreen", node_size=400,
-                           node_shape="o", edgecolors="darkgreen", linewidths=2,
-                           label="Edge (Cámara IP 720p)")
-    nx.draw_networkx_nodes(G, positions, nodelist=fog_nodes,
-                           node_color="orange", node_size=900,
-                           node_shape="s", edgecolors="darkorange", linewidths=3,
-                           label="Fog (Raspberry Pi 4 — YOLOv8)")
-    nx.draw_networkx_nodes(G, positions, nodelist=cloud_nodes,
-                           node_color="crimson", node_size=1300,
-                           node_shape="D", edgecolors="darkred", linewidths=3,
-                           label="Cloud (Registro JSON / Video Storage)")
+    nx.draw_networkx_nodes(G, draw_pos, nodelist=camera_nodes,
+                            node_color=colors["edge_node"], node_size=430,
+                            node_shape="o", edgecolors=colors["edge_border"], linewidths=2,
+                            label="Edge (Cámara IP 720p)")
+    nx.draw_networkx_nodes(G, draw_pos, nodelist=fog_nodes,
+                            node_color=colors["fog_node"], node_size=920,
+                            node_shape="s", edgecolors=colors["fog_border"], linewidths=2.6,
+                            label="Fog (Raspberry Pi 4 — YOLOv8)")
+    nx.draw_networkx_nodes(G, draw_pos, nodelist=cloud_nodes,
+                            node_color=colors["cloud_node"], node_size=1350,
+                            node_shape="D", edgecolors=colors["cloud_border"], linewidths=2.6,
+                            label="Cloud (Registro JSON / Video Storage)")
 
     # ── Etiquetas ─────────────────────────────────────────────────────────
-    nx.draw_networkx_labels(G, positions,
+    nx.draw_networkx_labels(G, draw_pos,
                             {n: nodes_info[n]["name"] for n in fog_nodes + cloud_nodes},
-                            font_size=8, font_weight="bold")
-    nx.draw_networkx_labels(G, positions,
+                            font_size=8, font_weight="bold", font_color="#1f2a36")
+    nx.draw_networkx_labels(G, draw_pos,
                             {n: nodes_info[n]["name"] for n in camera_nodes},
-                            font_size=7, font_color="darkgreen")
-
-    # ── Zonas de parqueadero ───────────────────────────────────────────────
-    zona_cfg = [
-        (Rectangle((0.05, 0.68), 0.25, 0.25, alpha=0.2),
-         "lightblue",  (0.175, 0.92), "Zona 1: Parqueadero Norte"),
-        (Rectangle((0.35, 0.38), 0.25, 0.25, alpha=0.2),
-         "lightyellow", (0.475, 0.62), "Zona 2: Parqueadero Central"),
-        (Rectangle((0.65, 0.08), 0.25, 0.25, alpha=0.2),
-         "lightcoral",  (0.775, 0.32), "Zona 3: Parqueadero Sur"),
-    ]
-    for rect, color, (tx, ty), name in zona_cfg:
-        rect.set_facecolor(color)
-        rect.set_edgecolor("gray")
-        rect.set_linewidth(2)
-        ax.add_patch(rect)
-        ax.text(tx, ty, name, ha="center", fontsize=10, fontweight="bold",
-                bbox=dict(boxstyle="round", facecolor=color, alpha=0.7))
+                            font_size=7, font_color="#2b5f68")
 
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.axis("off")
+    n_edge = len(camera_nodes)
+    n_fog = len(fog_nodes)
+    n_cloud = len(cloud_nodes)
     plt.title(
-        "Arquitectura — Sistema de Parqueaderos con Visión Artificial\n"
-        "6 Cámaras IP  +  3 Raspberry Pi 4 (YOLOv8)  +  2 Servidores Cloud",
-        fontsize=16, fontweight="bold", pad=20,
+        "Topología Smart City - Vista Jerárquica Edge/Fog/Cloud\n"
+        f"{n_edge} Edge  +  {n_fog} Fog  +  {n_cloud} Cloud",
+        pad=12,
     )
-    plt.legend(loc="upper left", fontsize=10, framealpha=0.9)
+
+    legend_items = [
+        Line2D([0], [0], color=colors["edge_link"], lw=2.2, linestyle="--", label="Edge -> Fog"),
+        Line2D([0], [0], color=colors["fog_link"], lw=2.8, linestyle="-", label="Fog <-> Fog"),
+        Line2D([0], [0], color=colors["cloud_link"], lw=3, linestyle=":", label="Fog -> Cloud"),
+        Line2D([0], [0], color=colors["dc_link"], lw=3.2, linestyle="-", label="Cloud <-> Cloud"),
+    ]
+    node_handles, node_labels = ax.get_legend_handles_labels()
+    plt.legend(handles=node_handles + legend_items, loc="lower center", ncol=4, fontsize=9,
+                framealpha=0.95, facecolor="#ffffff", edgecolor="#a7b2bc")
     plt.tight_layout()
 
     if save_path:

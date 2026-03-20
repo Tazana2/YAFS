@@ -33,7 +33,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
-from matplotlib.patches import Rectangle
+from matplotlib.patches import FancyBboxPatch
+from matplotlib.lines import Line2D
 
 import networkx as nx
 
@@ -73,6 +74,9 @@ class SimulationRecorder:
         self.fog_nodes   = [n for n, a in nodes_info.items() if a["type"] == "fog"]
         self.cloud_nodes = [n for n, a in nodes_info.items() if a["type"] == "cloud"]
 
+        # Layout estable por capas para evitar jitter visual entre frames.
+        self.draw_positions = self._build_layered_positions()
+
     # ------------------------------------------------------------------
     # Configuración
     # ------------------------------------------------------------------
@@ -85,6 +89,29 @@ class SimulationRecorder:
     # ------------------------------------------------------------------
     # Lectura de métricas
     # ------------------------------------------------------------------
+
+    def _build_layered_positions(self):
+        """Ubica nodos en columnas EDGE/FOG/CLOUD para una visualización limpia."""
+
+        def _layer(nodes, x_pos, y_bottom=0.1, y_top=0.9):
+            if not nodes:
+                return {}
+            ordered = sorted(
+                nodes,
+                key=lambda nid: self.positions.get(nid, (0.0, 0.0))[1],
+                reverse=True,
+            )
+            if len(ordered) == 1:
+                return {ordered[0]: (x_pos, (y_bottom + y_top) / 2)}
+
+            step = (y_top - y_bottom) / (len(ordered) - 1)
+            return {node: (x_pos, y_top - i * step) for i, node in enumerate(ordered)}
+
+        pos = {}
+        pos.update(_layer(self.edge_nodes, 0.18, 0.08, 0.92))
+        pos.update(_layer(self.fog_nodes, 0.50, 0.12, 0.88))
+        pos.update(_layer(self.cloud_nodes, 0.82, 0.16, 0.84))
+        return pos
 
     def _read_csv_counts(self):
         """Lee los CSVs y devuelve conteos acumulados por nodo y enlace."""
@@ -155,12 +182,44 @@ class SimulationRecorder:
         G = self.topology.G
 
         fig, axes = plt.subplots(
-            1, 2, figsize=(20, 9),
-            gridspec_kw={"width_ratios": [3, 1]},
-            facecolor="#1a1a2e",
+            1, 2, figsize=(20, 9.5),
+            gridspec_kw={"width_ratios": [3.6, 1.2]},
+            facecolor="#f4f6f8",
         )
         ax = axes[0]
-        ax.set_facecolor("#16213e")
+        ax.set_facecolor("#eef2f5")
+
+        palette = {
+            "edge_lane": "#dce7ef",
+            "fog_lane": "#ece4d7",
+            "cloud_lane": "#eaddde",
+            "edge_border": "#90a7b6",
+            "fog_border": "#ad9468",
+            "cloud_border": "#ad8484",
+            "edge_link": "#2f6f8f",
+            "fog_link": "#8f6b32",
+            "cloud_link": "#a54141",
+            "dc_link": "#5d5776",
+        }
+
+        def lane(x, y, w, h, label, face, edge):
+            box = FancyBboxPatch(
+                (x, y),
+                w,
+                h,
+                boxstyle="round,pad=0.006,rounding_size=0.01",
+                facecolor=face,
+                edgecolor=edge,
+                linewidth=1.2,
+                alpha=0.9,
+                zorder=0,
+            )
+            ax.add_patch(box)
+            ax.text(x + 0.015, y + h - 0.03, label, fontsize=10, fontweight="bold", color="#22303c")
+
+        lane(0.05, 0.04, 0.24, 0.92, "EDGE", palette["edge_lane"], palette["edge_border"])
+        lane(0.37, 0.04, 0.26, 0.92, "FOG", palette["fog_lane"], palette["fog_border"])
+        lane(0.69, 0.04, 0.24, 0.92, "CLOUD", palette["cloud_lane"], palette["cloud_border"])
 
         max_node   = max(max(node_counts.values(), default=1), 1)
         max_recent = max(max(recent_node.values(), default=1), 1)
@@ -171,9 +230,9 @@ class SimulationRecorder:
             colors = [recent_node.get(n, 0) / max_recent for n in nodelist]
             return sizes, colors
 
-        edge_sizes,  edge_c  = node_props(self.edge_nodes,  250,  750)
-        fog_sizes,   fog_c   = node_props(self.fog_nodes,   600, 1400)
-        cloud_sizes, cloud_c = node_props(self.cloud_nodes, 900, 2100)
+        edge_sizes,  edge_c  = node_props(self.edge_nodes,  180,  380)
+        fog_sizes,   fog_c   = node_props(self.fog_nodes,   420, 780)
+        cloud_sizes, cloud_c = node_props(self.cloud_nodes, 620, 1080)
 
         def ew(elist, base=0.5, scale=5):
             return [base + scale * (recent_link.get(e, 0) / max_link_r) for e in elist]
@@ -186,75 +245,123 @@ class SimulationRecorder:
                                             or (u in self.cloud_nodes and v in self.fog_nodes)]
         cc = [(u, v) for u, v in G.edges() if u in self.cloud_nodes and v in self.cloud_nodes]
 
-        nx.draw_networkx_edges(G, self.positions, edgelist=ee, alpha=0.25,
-                               width=ew(ee, 0.5, 2.5), edge_color="#90EE90", ax=ax)
-        nx.draw_networkx_edges(G, self.positions, edgelist=ef, alpha=0.55,
-                               width=ew(ef, 1, 5), edge_color="royalblue",
-                               style="dashed", ax=ax)
-        nx.draw_networkx_edges(G, self.positions, edgelist=ff, alpha=0.65,
-                               width=ew(ff, 1.5, 6), edge_color="darkorange", ax=ax)
-        nx.draw_networkx_edges(G, self.positions, edgelist=fc, alpha=0.65,
-                               width=ew(fc, 1.5, 6), edge_color="tomato",
-                               style="dotted", ax=ax)
-        nx.draw_networkx_edges(G, self.positions, edgelist=cc, alpha=0.75,
-                               width=ew(cc, 2, 7), edge_color="mediumpurple", ax=ax)
+        nx.draw_networkx_edges(
+            G,
+            self.draw_positions,
+            edgelist=ee,
+            alpha=0.35,
+            width=ew(ee, 0.5, 2.0),
+            edge_color="#6ea873",
+            ax=ax,
+            connectionstyle="arc3,rad=0.12",
+        )
+        nx.draw_networkx_edges(
+            G,
+            self.draw_positions,
+            edgelist=ef,
+            alpha=0.8,
+            width=ew(ef, 1.2, 3.6),
+            edge_color=palette["edge_link"],
+            style="dashed",
+            ax=ax,
+            connectionstyle="arc3,rad=0.06",
+        )
+        nx.draw_networkx_edges(
+            G,
+            self.draw_positions,
+            edgelist=ff,
+            alpha=0.78,
+            width=ew(ff, 1.3, 3.9),
+            edge_color=palette["fog_link"],
+            ax=ax,
+            connectionstyle="arc3,rad=0.08",
+        )
+        nx.draw_networkx_edges(
+            G,
+            self.draw_positions,
+            edgelist=fc,
+            alpha=0.82,
+            width=ew(fc, 1.5, 4.1),
+            edge_color=palette["cloud_link"],
+            style="dotted",
+            ax=ax,
+            connectionstyle="arc3,rad=-0.06",
+        )
+        nx.draw_networkx_edges(
+            G,
+            self.draw_positions,
+            edgelist=cc,
+            alpha=0.8,
+            width=ew(cc, 1.7, 4.2),
+            edge_color=palette["dc_link"],
+            ax=ax,
+            connectionstyle="arc3,rad=0.1",
+        )
 
-        nx.draw_networkx_nodes(G, self.positions, nodelist=self.edge_nodes,
-                               node_color=edge_c, cmap=cm.YlGn, vmin=0, vmax=1,
+        nx.draw_networkx_nodes(G, self.draw_positions, nodelist=self.edge_nodes,
+                               node_color=edge_c, cmap=cm.Blues, vmin=0, vmax=1,
                                node_size=edge_sizes, node_shape="o",
-                               edgecolors="#00ff88", linewidths=1.5, ax=ax)
-        nx.draw_networkx_nodes(G, self.positions, nodelist=self.fog_nodes,
+                               edgecolors="#2b5f68", linewidths=1.3, ax=ax)
+        nx.draw_networkx_nodes(G, self.draw_positions, nodelist=self.fog_nodes,
                                node_color=fog_c, cmap=cm.YlOrBr, vmin=0, vmax=1,
                                node_size=fog_sizes, node_shape="s",
-                               edgecolors="darkorange", linewidths=2.5, ax=ax)
-        nx.draw_networkx_nodes(G, self.positions, nodelist=self.cloud_nodes,
-                               node_color=cloud_c, cmap=cm.YlOrRd, vmin=0, vmax=1,
+                               edgecolors="#8f642a", linewidths=2.0, ax=ax)
+        nx.draw_networkx_nodes(G, self.draw_positions, nodelist=self.cloud_nodes,
+                               node_color=cloud_c, cmap=cm.Reds, vmin=0, vmax=1,
                                node_size=cloud_sizes, node_shape="D",
-                               edgecolors="#ff4444", linewidths=2.5, ax=ax)
+                               edgecolors="#7f2b2b", linewidths=2.1, ax=ax)
 
         important = {n: self.nodes_info[n]["name"] for n in self.fog_nodes + self.cloud_nodes}
-        edge_lbl  = {n: f"{n}\n({node_counts.get(n, 0)})" for n in self.edge_nodes}
-        nx.draw_networkx_labels(G, self.positions, important,
+        edge_lbl  = {n: str(n) for n in self.edge_nodes}
+        nx.draw_networkx_labels(G, self.draw_positions, important,
                                 font_size=8, font_weight="bold",
-                                font_color="white", ax=ax)
-        nx.draw_networkx_labels(G, self.positions, edge_lbl,
-                                font_size=6, font_color="#aaffcc", ax=ax)
-
-        # Zonas
-        zona_data = [
-            ((0.05, 0.68), 0.25, 0.25, "#add8e630", "Zona 1"),
-            ((0.35, 0.38), 0.25, 0.25, "#ffffe030", "Zona 2"),
-            ((0.65, 0.08), 0.25, 0.25, "#ffcccc30", "Zona 3"),
-        ]
-        for (x, y), w, h, color, name in zona_data:
-            ax.add_patch(Rectangle((x, y), w, h, facecolor=color,
-                                   edgecolor="gray", linewidth=1.5, alpha=0.6))
+                                font_color="#1f2a36", ax=ax)
+        nx.draw_networkx_labels(G, self.draw_positions, edge_lbl,
+                                font_size=6, font_color="#355d73", ax=ax)
 
         ax.set_xlim(-0.02, 1.02)
         ax.set_ylim(-0.02, 1.02)
         ax.axis("off")
         ax.set_title(
-            f"Simulación Edge/Fog/Cloud  —  t = {current_time:,.0f} / {self.sim_until:,.0f}",
-            fontsize=13, fontweight="bold", color="white", pad=8,
+            f"Simulacion Smart City Edge/Fog/Cloud  |  t = {current_time:,.0f} / {self.sim_until:,.0f}",
+            fontsize=13, fontweight="bold", color="#1f2a36", pad=8,
+        )
+
+        legend_items = [
+            Line2D([0], [0], color="#6ea873", lw=2.5, linestyle="-", label="Edge <-> Edge"),
+            Line2D([0], [0], color=palette["edge_link"], lw=2.8, linestyle="--", label="Edge <-> Fog"),
+            Line2D([0], [0], color=palette["fog_link"], lw=2.8, linestyle="-", label="Fog <-> Fog"),
+            Line2D([0], [0], color=palette["cloud_link"], lw=2.8, linestyle=":", label="Fog <-> Cloud"),
+            Line2D([0], [0], color=palette["dc_link"], lw=2.8, linestyle="-", label="Cloud <-> Cloud"),
+        ]
+        ax.legend(
+            handles=legend_items,
+            loc="lower center",
+            ncol=5,
+            fontsize=8,
+            framealpha=0.96,
+            facecolor="#ffffff",
+            edgecolor="#a8b3bc",
         )
 
         # Barra de progreso
         progress = min(current_time / max(self.sim_until, 1), 1.0)
-        bar_ax = fig.add_axes([0.05, 0.02, 0.565, 0.018])
-        bar_ax.set_facecolor("#0a0a1a")
-        bar_ax.barh(0, progress, color="dodgerblue", height=1)
+        bar_ax = fig.add_axes([0.05, 0.02, 0.61, 0.018])
+        bar_ax.set_in_layout(False)
+        bar_ax.set_facecolor("#dde4ea")
+        bar_ax.barh(0, progress, color="#2f6f8f", height=1)
         bar_ax.set_xlim(0, 1)
         bar_ax.set_yticks([])
         bar_ax.set_xticks([0, 0.25, 0.5, 0.75, 1.0])
         bar_ax.set_xticklabels(["0%", "25%", "50%", "75%", "100%"],
-                                fontsize=7, color="white")
-        bar_ax.tick_params(colors="white")
+                                fontsize=7, color="#253341")
+        bar_ax.tick_params(colors="#253341")
         for spine in bar_ax.spines.values():
-            spine.set_edgecolor("#333355")
+            spine.set_edgecolor("#a6b3bf")
 
         # Panel de estadísticas
         ax2 = axes[1]
-        ax2.set_facecolor("#0f0f23")
+        ax2.set_facecolor("#f7f9fb")
         ax2.axis("off")
 
         total_msgs  = sum(node_counts.values())
@@ -268,37 +375,32 @@ class SimulationRecorder:
         top_val  = node_counts.get(top_node, 0) if top_node is not None else 0
 
         stats = (
-            "MÉTRICAS EN TIEMPO REAL\n"
-            "━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"  Tiempo sim : {current_time:>8,.0f}\n"
-            f"  Frame      : {self.frame_count + 1:>8}\n\n"
-            "  ── Mensajes acumulados ──\n"
-            f"  EDGE   : {edge_total:>8,}\n"
-            f"  FOG    : {fog_total:>8,}\n"
-            f"  CLOUD  : {cloud_total:>8,}\n"
-            f"  TOTAL  : {total_msgs:>8,}\n\n"
-            "  ── Último intervalo ──\n"
-            f"  Nuevos : {total_rec:>8,}\n\n"
-            "  ── Nodo más activo ──\n"
-            f"  {top_name}\n"
-            f"  {top_val:,} mensajes\n\n"
-            "  ── Leyenda enlaces ──\n"
-            "  ─── Edge↔Edge\n"
-            "  --- Edge↔Fog\n"
-            "  ─── Fog↔Fog\n"
-            "  ··· Fog↔Cloud\n"
-            "  ─── Cloud↔Cloud"
+            "METRICAS DE SIMULACION\n"
+            "======================\n\n"
+            f" Tiempo simulado  : {current_time:>10,.0f}\n"
+            f" Frame            : {self.frame_count + 1:>10}\n"
+            f" Progreso         : {100*min(current_time/max(self.sim_until, 1), 1.0):>9.1f}%\n\n"
+            "Mensajes acumulados\n"
+            f" EDGE             : {edge_total:>10,}\n"
+            f" FOG              : {fog_total:>10,}\n"
+            f" CLOUD            : {cloud_total:>10,}\n"
+            f" TOTAL            : {total_msgs:>10,}\n\n"
+            "Actividad reciente\n"
+            f" Nuevos mensajes  : {total_rec:>10,}\n\n"
+            "Nodo mas activo\n"
+            f" {top_name}\n"
+            f" {top_val:,} mensajes"
         )
         ax2.text(0.05, 0.97, stats, transform=ax2.transAxes,
-                 fontsize=9.5, verticalalignment="top", fontfamily="monospace",
-                 color="#e0e0ff",
-                 bbox=dict(boxstyle="round,pad=0.6", facecolor="#1a1a3e",
-                           edgecolor="#4444aa", alpha=0.9))
+                 fontsize=9.2, verticalalignment="top", fontfamily="monospace",
+                 color="#253341",
+                 bbox=dict(boxstyle="round,pad=0.6", facecolor="#ffffff",
+                           edgecolor="#b5c0c9", alpha=0.98))
 
-        fig.suptitle("Edge / Fog / Cloud IoT Simulation — YAFS",
-                     fontsize=15, fontweight="bold", color="white", y=0.99)
-        fig.patch.set_facecolor("#1a1a2e")
-        plt.tight_layout(rect=[0, 0.05, 1, 0.97])
+        fig.suptitle("Edge / Fog / Cloud Smart City Simulation - YAFS",
+                     fontsize=15, fontweight="bold", color="#1f2a36", y=0.99)
+        fig.patch.set_facecolor("#f4f6f8")
+        fig.subplots_adjust(left=0.02, right=0.985, bottom=0.07, top=0.94, wspace=0.06)
 
         frame_path = self.frames_dir / f"frame_{self.frame_count:05d}.png"
         plt.savefig(str(frame_path), dpi=100, bbox_inches="tight",

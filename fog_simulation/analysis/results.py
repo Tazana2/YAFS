@@ -1,14 +1,4 @@
-"""
-Análisis de resultados — Sistema de Parqueaderos.
-
-Lee los CSV generados por YAFS (sim_trace.csv y sim_trace_link.csv) y
-produce un informe desglosado por capa, por flujo y métricas end-to-end.
-
-Flujos monitorizados
---------------------
-  Flujo A (Parking_Intelligence) : Cámara → YOLOv8_Fog → CloudRegistry
-  Flujo B (Parking_Security)     : Cámara → Passthrough → CloudVideoStorage
-"""
+"""Analisis de resultados para escenario urbano multiaplicacion."""
 
 from pathlib import Path
 
@@ -31,7 +21,7 @@ def analyze_results(results_path, nodes_info: dict):
     results_path = Path(results_path)
 
     print("\n" + "=" * 70)
-    print("ANÁLISIS DE RESULTADOS — PARQUEADERO")
+    print("ANALISIS DE RESULTADOS — SMART CITY")
     print("=" * 70 + "\n")
 
     try:
@@ -61,9 +51,9 @@ def analyze_results(results_path, nodes_info: dict):
     print("-" * 70)
 
     for label, icon, nodeset in [
-        ("EDGE   (Cámaras IP)",     "📷", camera_nodes),
-        ("FOG    (Raspberry Pi 4)", "🟠", fog_nodes),
-        ("CLOUD  (Servidores)",     "☁️ ", cloud_nodes),
+        ("EDGE   (Ingestion)", "📷", camera_nodes),
+        ("FOG    (Procesamiento)", "🟠", fog_nodes),
+        ("CLOUD  (Servicios)", "☁️ ", cloud_nodes),
     ]:
         subset = df_messages[df_messages["TOPO.dst"].isin(nodeset)]
         print(f"\n{icon} {label}:")
@@ -79,8 +69,9 @@ def analyze_results(results_path, nodes_info: dict):
     print("-" * 70)
 
     flow_labels = {
-        "Parking_Intelligence": "Flujo A — Inteligencia (YOLOv8 → CloudRegistry)",
-        "Parking_Security":     "Flujo B — Seguridad (Passthrough → VideoStorage)",
+        "Urban_Video_Analytics": "App 1 — Urban_Video_Analytics",
+        "Urban_Sensor_Climatology": "App 2 — Urban_Sensor_Climatology",
+        "Platform_Lifecycle": "Shared — Platform_Lifecycle",
     }
 
     for app_id in df_messages["app"].unique():
@@ -108,8 +99,8 @@ def analyze_results(results_path, nodes_info: dict):
         cf = link_count(camera_nodes, fog_nodes) + link_count(fog_nodes, camera_nodes)
         fc = link_count(fog_nodes, cloud_nodes)  + link_count(cloud_nodes, fog_nodes)
 
-        print(f"\n📡 Cámara ↔ RPi4  (Edge→Fog)  : {cf:,} transmisiones  ← video crudo + frames")
-        print(f"📡 RPi4   ↔ Cloud (Fog→Cloud) : {fc:,} transmisiones  ← JSON + video almacenado")
+        print(f"\n📡 Edge ↔ Fog   : {cf:,} transmisiones")
+        print(f"📡 Fog  ↔ Cloud : {fc:,} transmisiones")
         if cf > 0:
             ratio = fc / cf
             print(f"   Relación Cloud/Edge        : {ratio:.2%} (reducción por inferencia)")

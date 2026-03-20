@@ -1,23 +1,4 @@
-"""
-Punto de entrada — Sistema de Parqueaderos con Visión Artificial.
-
-Arquitectura
-------------
-  Cámara IP (edge)  →  Raspberry Pi 4 (fog / YOLOv8)  →  Cloud
-
-Flujos simulados
-----------------
-  Flujo A (Inteligencia) : Cámara → YOLOv8_RPi4 → CloudRegistry (JSON).
-                           Prioridad Media  |  Carga CPU Alta.
-  Flujo B (Seguridad)    : Cámara → Passthrough → CloudVideoStorage.
-                           Prioridad Alta   |  Carga Red Alta.
-
-Ejecución
----------
-    python -m fog_simulation
-    # o bien
-    python fog_simulation/main.py
-"""
+"""Punto de entrada de la simulacion urbana multiaplicacion."""
 
 import random
 from pathlib import Path
@@ -35,35 +16,35 @@ def main():
     random.seed(42)
 
     print("\n" + "=" * 70)
-    print("  SIMULACIÓN — SISTEMA DE PARQUEADEROS CON VISIÓN ARTIFICIAL")
-    print("  Cámaras IP  +  Raspberry Pi 4 (YOLOv8)  +  Cloud")
+    print("  SIMULACION — CIUDAD INTELIGENTE MULTIAPP")
+    print("  Video + Sensores + Servicios Compartidos Edge/Fog/Cloud")
     print("=" * 70 + "\n")
 
     # ── 1. Topología ──────────────────────────────────────────────────
-    print("🔧 Paso 1: Creando topología Cámara/RPi4/Cloud...")
+    print("🔧 Paso 1: Creando topologia multi-zona Edge/Fog/Cloud...")
     topology, positions, nodes_info = create_edge_fog_cloud_topology()
     n_cameras = sum(1 for a in nodes_info.values() if a["type"] == "edge")
     n_fog     = sum(1 for a in nodes_info.values() if a["type"] == "fog")
     n_cloud   = sum(1 for a in nodes_info.values() if a["type"] == "cloud")
-    print(f"   ✓ {n_cameras} Cámaras IP 720p (edge)")
-    print(f"   ✓ {n_fog} Raspberry Pi 4 con YOLOv8 (fog)")
-    print(f"   ✓ {n_cloud} Servidores Cloud (JSON + Video Storage)")
+    print(f"   ✓ {n_cameras} nodos edge (video/sensores)")
+    print(f"   ✓ {n_fog} nodos fog (video/sensores/shared)")
+    print(f"   ✓ {n_cloud} servicios cloud por rol")
     print(f"   ✓ {len(topology.G.edges())} enlaces de red\n")
 
     # ── 2. Exportar topología ─────────────────────────────────────────
-    results_path = Path("results_parking")
+    results_path = Path("results_smart_city")
     results_path.mkdir(exist_ok=True)
 
     print("🔧 Paso 2: Exportando topología...")
-    nx.write_gexf(topology.G,    str(results_path / "parking_topology.gexf"))
-    nx.write_graphml(topology.G, str(results_path / "parking_topology.graphml"))
+    nx.write_gexf(topology.G,    str(results_path / "smart_city_topology.gexf"))
+    nx.write_graphml(topology.G, str(results_path / "smart_city_topology.graphml"))
     print("   ✓ Archivos exportados para Gephi/yEd\n")
 
     # ── 3. Visualizaciones ────────────────────────────────────────────
     print("🔧 Paso 3: Generando visualizaciones...")
     visualize_topology(
         topology, positions, nodes_info,
-        save_path=str(results_path / "topology_parking.png"),
+        save_path=str(results_path / "topology_smart_city.png"),
     )
     create_deployment_diagram(
         nodes_info,
@@ -104,19 +85,21 @@ def main():
     print("=" * 70)
     print(f"\n📁 Resultados en: {results_path}/")
     print("\n📄 Archivos generados:")
-    print("   • topology_parking.png    — Topología de la red")
+    print("   • topology_smart_city.png — Topologia de la red")
     print("   • deployment_diagram.png  — Flujos A y B diferenciados")
-    print("   • parking_topology.gexf   — Topología (Gephi)")
-    print("   • parking_topology.graphml— Topología (GraphML)")
+    print("   • smart_city_topology.gexf   — Topologia (Gephi)")
+    print("   • smart_city_topology.graphml— Topologia (GraphML)")
     print("   • sim_trace.csv           — Procesamiento de mensajes")
     print("   • sim_trace_link.csv      — Transmisiones de red")
     print("   • simulation_video.mp4    — Video de la simulación")
     print()
-    print("📌 Flujos simulados:")
-    print("   Flujo A — Inteligencia : Cámara → YOLOv8 (RPi4) → CloudRegistry")
-    print("             Prioridad Media | Carga CPU Alta (~450 ms/frame en RPi4)")
-    print("   Flujo B — Seguridad    : Cámara → Passthrough (RPi4) → VideoStorage")
-    print("             Prioridad Alta | Carga Red Alta (~500 KB/chunk)")
+    print("📌 Aplicaciones simuladas:")
+    print("   App 1 — Urban_Video_Analytics")
+    print("           edge-video-ingestion → edge-inference → tracking/event → stream-processing")
+    print("   App 2 — Urban_Sensor_Climatology")
+    print("           edge-sensor-ingestion → preprocessing → stream-processing → prediction")
+    print("   Shared — Platform_Lifecycle")
+    print("            simulation-service → mlops → deployment → api/access → observability")
 
     print("   • sim_trace_link.csv           — Tráfico de red")
     print("   • frames/frame_NNNNN.png       — Frames de la simulación")

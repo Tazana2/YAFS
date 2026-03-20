@@ -1,148 +1,167 @@
-"""
-Diagrama de despliegue — Sistema de Parqueaderos.
-
-Muestra las tres capas del sistema (Cámara / RPi4 / Cloud) con los dos
-flujos de datos diferenciados:
-
-  Flujo A (Inteligencia - azul) : Cámara → YOLOv8_RPi4 → CloudRegistry.
-  Flujo B (Seguridad   - rojo)  : Cámara → Passthrough  → CloudVideoStorage.
-"""
+"""Diagrama de despliegue para dos aplicaciones urbanas y servicios compartidos."""
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import numpy as np
+from matplotlib.patches import FancyBboxPatch
+
+
+def _box(ax, x, y, w, h, label, fc, ec="#2f3b46", txt="#1f2a36", fs=8, r=0.01, lw=1.3):
+    rect = FancyBboxPatch(
+        (x, y),
+        w,
+        h,
+        boxstyle=f"round,pad=0.004,rounding_size={r}",
+        facecolor=fc,
+        edgecolor=ec,
+        linewidth=lw,
+    )
+    ax.add_patch(rect)
+    ax.text(
+        x + w / 2,
+        y + h / 2,
+        label,
+        ha="center",
+        va="center",
+        fontsize=fs,
+        color=txt,
+        fontweight="bold",
+    )
+
+
+def _arrow(ax, x0, y0, x1, y1, color, style="-", lw=1.9, rad=0.0):
+    ax.annotate(
+        "",
+        xy=(x1, y1),
+        xytext=(x0, y0),
+        arrowprops=dict(
+            arrowstyle="->",
+            lw=lw,
+            color=color,
+            linestyle=style,
+            alpha=0.9,
+            shrinkA=2,
+            shrinkB=2,
+            connectionstyle=f"arc3,rad={rad}",
+        ),
+    )
+
+
+def _lane(ax, y, h, label, fc, ec):
+    rect = FancyBboxPatch(
+        (0.03, y),
+        0.94,
+        h,
+        boxstyle="round,pad=0.006,rounding_size=0.01",
+        facecolor=fc,
+        edgecolor=ec,
+        linewidth=1.3,
+        alpha=0.95,
+    )
+    ax.add_patch(rect)
+    ax.text(0.045, y + h - 0.03, label, ha="left", va="center", fontsize=10, fontweight="bold", color="#22303c")
 
 
 def create_deployment_diagram(nodes_info, save_path: str):
-    """
-    Genera y guarda el diagrama de despliegue en ``save_path``.
+    """Genera un diagrama app-centric de despliegue y flujos principales."""
+    _ = nodes_info
 
-    Parameters
-    ----------
-    nodes_info : dict {node_id: {...}} con atributos de cada nodo.
-    save_path  : ruta de salida del PNG.
-    """
-    fig, ax = plt.subplots(figsize=(14, 11))
+    plt.rcParams.update({
+        "font.family": "DejaVu Sans",
+        "font.size": 9,
+        "axes.titlesize": 16,
+    })
 
-    y_camera = 0.15
-    y_fog    = 0.50
-    y_cloud  = 0.82
-
-    # ── EDGE layer: 6 Cámaras IP ──────────────────────────────────────────
-    camera_x = np.linspace(0.12, 0.88, 6)
-    for i, x in enumerate(camera_x):
-        zone = i // 2 + 1
-        rect = plt.Rectangle((x - 0.04, y_camera - 0.05), 0.08, 0.10,
-                              facecolor="#d0f0c0", edgecolor="darkgreen", linewidth=2)
-        ax.add_patch(rect)
-        ax.text(x, y_camera + 0.005, f"Cam\nZ{zone}/{i % 2}",
-                ha="center", va="center", fontsize=8, fontweight="bold")
-
-    ax.text(0.05, y_camera, "EDGE\nCámaras\nIP 720p",
-            ha="center", va="center", fontsize=10, fontweight="bold",
-            bbox=dict(boxstyle="round", facecolor="#d0f0c0", alpha=0.8))
-
-    # ── FOG layer: 3 Raspberry Pi 4 ───────────────────────────────────────
-    fog_x = [0.25, 0.50, 0.75]
-    for i, x in enumerate(fog_x):
-        rect = plt.Rectangle((x - 0.09, y_fog - 0.08), 0.18, 0.16,
-                              facecolor="#ffe0a0", edgecolor="darkorange", linewidth=3)
-        ax.add_patch(rect)
-        ax.text(x, y_fog + 0.01, f"RPi4\nZona {i + 1}",
-                ha="center", va="center", fontsize=9, fontweight="bold")
-        ax.text(x, y_fog - 0.03, "YOLOv8 + Pass.",
-                ha="center", va="center", fontsize=7, color="#664400")
-
-    ax.text(0.05, y_fog, "FOG\nRaspberry\nPi 4",
-            ha="center", va="center", fontsize=10, fontweight="bold",
-            bbox=dict(boxstyle="round", facecolor="#ffe0a0", alpha=0.8))
-
-    # ── CLOUD layer: 2 Servidores ─────────────────────────────────────────
-    cloud_x = [0.33, 0.67]
-    cloud_labels = ["Cloud\nRegistro\nJSON", "Cloud\nVideo\nStorage"]
-    for i, (x, lbl) in enumerate(zip(cloud_x, cloud_labels)):
-        rect = plt.Rectangle((x - 0.11, y_cloud - 0.08), 0.22, 0.16,
-                              facecolor="#c0004a" if i == 0 else "#7b0000",
-                              edgecolor="darkred", linewidth=3)
-        ax.add_patch(rect)
-        ax.text(x, y_cloud, lbl,
-                ha="center", va="center", fontsize=9,
-                fontweight="bold", color="white")
-
-    ax.text(0.05, y_cloud, "CLOUD\nServidores",
-            ha="center", va="center", fontsize=10, fontweight="bold",
-            bbox=dict(boxstyle="round", facecolor="#ffaaaa", alpha=0.8))
-
-    # ── Flechas Flujo A (Inteligencia) — azul ─────────────────────────────
-    # Cámara → RPi4 de su zona (frames H.264 para inferencia)
-    for i, cam_x in enumerate(camera_x):
-        fog_gw = fog_x[i // 2]
-        ax.annotate("",
-                    xy=(fog_gw, y_fog - 0.08),
-                    xytext=(cam_x, y_camera + 0.05),
-                    arrowprops=dict(arrowstyle="->", lw=1.5,
-                                    color="steelblue", alpha=0.55))
-
-    # RPi4 → CloudRegistry (JSON resultado)
-    for x in fog_x:
-        ax.annotate("",
-                    xy=(cloud_x[0], y_cloud - 0.08),
-                    xytext=(x, y_fog + 0.08),
-                    arrowprops=dict(arrowstyle="->", lw=2.5,
-                                    color="steelblue", alpha=0.75))
-
-    # ── Flechas Flujo B (Seguridad) — rojo ────────────────────────────────
-    # Cámara → RPi4 (video crudo — ligeramente desplazado para distinguir)
-    for i, cam_x in enumerate(camera_x):
-        fog_gw = fog_x[i // 2]
-        ax.annotate("",
-                    xy=(fog_gw + 0.025, y_fog - 0.08),
-                    xytext=(cam_x + 0.015, y_camera + 0.05),
-                    arrowprops=dict(arrowstyle="->", lw=1.5,
-                                    color="crimson", alpha=0.55,
-                                    linestyle="dashed"))
-
-    # RPi4 → CloudVideoStorage (video stream)
-    for x in fog_x:
-        ax.annotate("",
-                    xy=(cloud_x[1], y_cloud - 0.08),
-                    xytext=(x + 0.025, y_fog + 0.08),
-                    arrowprops=dict(arrowstyle="->", lw=2.5,
-                                    color="crimson", alpha=0.75,
-                                    linestyle="dashed"))
-
-    # ── Leyenda de flujos ─────────────────────────────────────────────────
-    from matplotlib.patches import FancyArrowPatch
-    import matplotlib.lines as mlines
-
-    flow_a_line = mlines.Line2D([], [], color="steelblue", linewidth=2.5,
-                                label="Flujo A — Inteligencia (YOLOv8 → JSON)")
-    flow_b_line = mlines.Line2D([], [], color="crimson", linewidth=2.5,
-                                linestyle="dashed",
-                                label="Flujo B — Seguridad (Video → Storage)")
-    ax.legend(handles=[flow_a_line, flow_b_line],
-              loc="upper right", fontsize=9, framealpha=0.9)
-
-    # ── Anotaciones de carga ──────────────────────────────────────────────
-    ax.text(0.50, (y_camera + y_fog) / 2 + 0.03,
-            "Video H.264\n~20 KB/frame (Flujo A)\n~500 KB/s (Flujo B)",
-            ha="center", fontsize=8, color="#333333",
-            bbox=dict(boxstyle="round", facecolor="lightyellow", alpha=0.7))
-
-    ax.text(0.50, (y_fog + y_cloud) / 2 + 0.01,
-            "JSON ~2 KB (Flujo A) / Video 500 KB (Flujo B)\nInternet ~100 Mbps · PR ~70 ms",
-            ha="center", fontsize=8, color="#333333",
-            bbox=dict(boxstyle="round", facecolor="#ffe0cc", alpha=0.7))
+    fig, ax = plt.subplots(figsize=(15, 9.5), facecolor="#f4f6f8")
+    ax.set_facecolor("#f0f3f6")
 
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.axis("off")
-    plt.title(
-        "Diagrama de Despliegue — Sistema de Parqueaderos\n"
-        "Flujo A (Inteligencia)  ·  Flujo B (Seguridad)",
-        fontsize=15, fontweight="bold", pad=18,
-    )
+
+    palette = {
+        "edge_layer": "#d8e4ef",
+        "fog_layer": "#e8e2d6",
+        "cloud_layer": "#e8dcde",
+        "edge_video": "#7ea5c4",
+        "edge_sensor": "#79afa7",
+        "fog_video": "#c1a06a",
+        "fog_sensor": "#93b190",
+        "fog_shared": "#b3ba9f",
+        "cloud_service": "#c58686",
+        "platform": "#c8ab78",
+        "video_flow": "#2e6c92",
+        "sensor_flow": "#3f7c4b",
+        "shared_flow": "#8a4545",
+        "platform_flow": "#7b6542",
+    }
+
+    # Carriles por capa (label en la esquina, no sobre los nodos)
+    _lane(ax, 0.07, 0.20, "EDGE LAYER", palette["edge_layer"], "#7a97b1")
+    _lane(ax, 0.31, 0.30, "FOG LAYER", palette["fog_layer"], "#9b8764")
+    _lane(ax, 0.65, 0.28, "CLOUD LAYER", palette["cloud_layer"], "#9c7676")
+
+    # EDGE
+    _box(ax, 0.08, 0.12, 0.14, 0.075, "edge-video\ningestion", palette["edge_video"], txt="#153447")
+    _box(ax, 0.08, 0.205, 0.14, 0.075, "edge-sensor\ningestion", palette["edge_sensor"], txt="#163f37")
+
+    # FOG: App 2 (sensor) fila superior
+    _box(ax, 0.27, 0.46, 0.14, 0.08, "sensor\npreprocess", palette["fog_sensor"], txt="#1f3b1f")
+    _box(ax, 0.44, 0.46, 0.14, 0.08, "sensor-stream\nprocessing", palette["fog_sensor"], txt="#1f3b1f")
+    _box(ax, 0.61, 0.46, 0.14, 0.08, "sensor\nprediction", palette["fog_sensor"], txt="#1f3b1f")
+
+    # FOG: App 1 (video) fila inferior
+    _box(ax, 0.27, 0.365, 0.14, 0.08, "edge\ninference", palette["fog_video"], txt="#3e2d12")
+    _box(ax, 0.44, 0.365, 0.14, 0.08, "tracking\nevent", palette["fog_video"], txt="#3e2d12")
+    _box(ax, 0.61, 0.365, 0.14, 0.08, "video-stream\nprocessing", palette["fog_video"], txt="#3e2d12")
+
+    # Integracion auxiliar
+    _box(ax, 0.27, 0.315, 0.14, 0.04, "climatology integration", palette["fog_shared"], fs=7.2, txt="#2f3a22")
+
+    # CLOUD services
+    _box(ax, 0.10, 0.75, 0.13, 0.09, "storage", palette["cloud_service"], txt="#441c1c")
+    _box(ax, 0.27, 0.75, 0.13, 0.09, "api-access", palette["cloud_service"], txt="#441c1c")
+    _box(ax, 0.44, 0.75, 0.13, 0.09, "visualization", palette["cloud_service"], txt="#441c1c")
+    _box(ax, 0.61, 0.75, 0.13, 0.09, "notification", palette["cloud_service"], txt="#441c1c")
+    _box(ax, 0.78, 0.75, 0.13, 0.09, "observability", palette["cloud_service"], txt="#441c1c")
+
+    # Platform lifecycle
+    _box(ax, 0.10, 0.88, 0.13, 0.05, "simulation", palette["platform"], txt="#4a3516")
+    _box(ax, 0.27, 0.88, 0.13, 0.05, "mlops", palette["platform"], txt="#4a3516")
+    _box(ax, 0.44, 0.88, 0.13, 0.05, "deployment", palette["platform"], txt="#4a3516")
+
+    # Flujos App 1 (video) - casi horizontales para legibilidad
+    _arrow(ax, 0.22, 0.155, 0.27, 0.405, palette["video_flow"], rad=0.0)
+    _arrow(ax, 0.41, 0.405, 0.44, 0.405, palette["video_flow"])
+    _arrow(ax, 0.58, 0.405, 0.61, 0.405, palette["video_flow"])
+    _arrow(ax, 0.75, 0.405, 0.16, 0.795, palette["video_flow"], rad=0.0)
+    _arrow(ax, 0.75, 0.405, 0.67, 0.795, palette["video_flow"], style="--")
+
+    # Flujos App 2 (sensores)
+    _arrow(ax, 0.22, 0.242, 0.27, 0.50, palette["sensor_flow"])
+    _arrow(ax, 0.41, 0.50, 0.44, 0.50, palette["sensor_flow"])
+    _arrow(ax, 0.58, 0.50, 0.61, 0.50, palette["sensor_flow"])
+    _arrow(ax, 0.41, 0.335, 0.44, 0.50, "#62733f", style=":", lw=1.5)
+    _arrow(ax, 0.75, 0.50, 0.16, 0.795, palette["sensor_flow"], rad=0.0)
+    _arrow(ax, 0.75, 0.50, 0.67, 0.795, palette["sensor_flow"], style="--")
+
+    # Cadena de servicios cloud
+    _arrow(ax, 0.23, 0.79, 0.27, 0.79, palette["shared_flow"])
+    _arrow(ax, 0.40, 0.79, 0.44, 0.79, palette["shared_flow"])
+    _arrow(ax, 0.40, 0.79, 0.78, 0.79, palette["shared_flow"], style=":")
+
+    # Platform chain
+    _arrow(ax, 0.23, 0.905, 0.27, 0.905, palette["platform_flow"])
+    _arrow(ax, 0.40, 0.905, 0.44, 0.905, palette["platform_flow"])
+    _arrow(ax, 0.57, 0.905, 0.78, 0.79, palette["platform_flow"])
+
+    # Leyenda textual compacta (no invade el area de nodos)
+    ax.text(0.03, 0.965, "Azul: App 1 (video)", fontsize=9, fontweight="bold", color=palette["video_flow"])
+    ax.text(0.20, 0.965, "Verde: App 2 (sensores)", fontsize=9, fontweight="bold", color=palette["sensor_flow"])
+    ax.text(0.43, 0.965, "Rojo: shared cloud", fontsize=9, fontweight="bold", color=palette["shared_flow"])
+    ax.text(0.61, 0.965, "Ocre: platform lifecycle", fontsize=9, fontweight="bold", color=palette["platform_flow"])
+
+    plt.title("Diagrama de Despliegue - Smart City Multiapp", fontsize=16, fontweight="bold", pad=10, color="#1f2a36")
     plt.tight_layout()
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"   ✓ Diagrama de despliegue guardado en: {save_path}")
