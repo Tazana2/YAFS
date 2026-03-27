@@ -51,8 +51,12 @@ def run_simulation(topology, stop_time: int = 50_000, recorder=None):
     results_path : Path al directorio de resultados.
     """
     print("\n" + "=" * 70)
+    has_gateway = any(a.get("type") == "gateway" for _, a in topology.G.nodes(data=True))
+    topo_label = "Edge/Gateway/Fog/Cloud" if has_gateway else "Edge/Fog/Cloud"
+
     print("INICIANDO SIMULACION — ESCENARIO URBANO MULTIAPP")
     print("  Placement: KubernetesDefaultScheduler (Filter → Score → Bind)")
+    print(f"  Topologia: {topo_label}")
     print("=" * 70)
 
     results_path = Path("results_fog_simulation")

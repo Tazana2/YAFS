@@ -36,9 +36,10 @@ def visualize_topology(topology, positions, nodes_info, save_path=None):
     """
     G = topology.G
 
-    camera_nodes = [n for n, a in nodes_info.items() if a["type"] == "edge"]
-    fog_nodes    = [n for n, a in nodes_info.items() if a["type"] == "fog"]
-    cloud_nodes  = [n for n, a in nodes_info.items() if a["type"] == "cloud"]
+    camera_nodes  = [n for n, a in nodes_info.items() if a["type"] == "edge"]
+    gateway_nodes = [n for n, a in nodes_info.items() if a["type"] == "gateway"]
+    fog_nodes     = [n for n, a in nodes_info.items() if a["type"] == "fog"]
+    cloud_nodes   = [n for n, a in nodes_info.items() if a["type"] == "cloud"]
 
     plt.rcParams.update({
         "font.family": "DejaVu Sans",
@@ -58,6 +59,9 @@ def visualize_topology(topology, positions, nodes_info, save_path=None):
         "cloud_node": "#c76262",
         "cloud_border": "#7f2b2b",
         "edge_link": "#2f6f8f",
+        "gateway_link": "#3f7b5b",
+        "gateway_node": "#7fb08a",
+        "gateway_border": "#2f6b3d",
         "fog_link": "#8f6b32",
         "cloud_link": "#a54141",
         "dc_link": "#5d5776",
@@ -74,9 +78,16 @@ def visualize_topology(topology, positions, nodes_info, save_path=None):
         return {node: (x_pos, yv) for node, yv in zip(nodes_sorted, ys)}
 
     draw_pos = {}
-    draw_pos.update(layered_positions(camera_nodes, 0.18, 0.10, 0.90))
-    draw_pos.update(layered_positions(fog_nodes, 0.50, 0.12, 0.88))
-    draw_pos.update(layered_positions(cloud_nodes, 0.82, 0.18, 0.82))
+    has_gateway = len(gateway_nodes) > 0
+    if has_gateway:
+        draw_pos.update(layered_positions(camera_nodes, 0.12, 0.10, 0.90))
+        draw_pos.update(layered_positions(gateway_nodes, 0.36, 0.12, 0.88))
+        draw_pos.update(layered_positions(fog_nodes, 0.60, 0.12, 0.88))
+        draw_pos.update(layered_positions(cloud_nodes, 0.84, 0.18, 0.82))
+    else:
+        draw_pos.update(layered_positions(camera_nodes, 0.18, 0.10, 0.90))
+        draw_pos.update(layered_positions(fog_nodes, 0.50, 0.12, 0.88))
+        draw_pos.update(layered_positions(cloud_nodes, 0.82, 0.18, 0.82))
 
     def draw_lane(x, y, w, h, label, face, edge):
         lane = FancyBboxPatch(
@@ -93,21 +104,35 @@ def visualize_topology(topology, positions, nodes_info, save_path=None):
         ax.add_patch(lane)
         ax.text(x + 0.015, y + h - 0.03, label, fontsize=10, fontweight="bold", color="#263341")
 
-    draw_lane(0.05, 0.05, 0.24, 0.90, "EDGE", "#dde8ee", "#8aa0af")
-    draw_lane(0.37, 0.05, 0.26, 0.90, "FOG", "#ece4d6", "#ad9468")
-    draw_lane(0.69, 0.05, 0.24, 0.90, "CLOUD", "#ebdddf", "#aa7f7f")
+    if has_gateway:
+        draw_lane(0.02, 0.05, 0.20, 0.90, "EDGE", "#dde8ee", "#8aa0af")
+        draw_lane(0.26, 0.05, 0.20, 0.90, "GATEWAY", "#e1ecdf", "#87a487")
+        draw_lane(0.50, 0.05, 0.20, 0.90, "FOG", "#ece4d6", "#ad9468")
+        draw_lane(0.74, 0.05, 0.20, 0.90, "CLOUD", "#ebdddf", "#aa7f7f")
+    else:
+        draw_lane(0.05, 0.05, 0.24, 0.90, "EDGE", "#dde8ee", "#8aa0af")
+        draw_lane(0.37, 0.05, 0.26, 0.90, "FOG", "#ece4d6", "#ad9468")
+        draw_lane(0.69, 0.05, 0.24, 0.90, "CLOUD", "#ebdddf", "#aa7f7f")
 
     # ── Filtro de listas de aristas ────────────────────────────────────────
     def edges_of(src_set, dst_set):
         return [(u, v) for u, v in G.edges()
                 if u in src_set and v in dst_set]
 
-    # Cámara → RPi4 (Flujos A y B)
+    # Edge → Gateway o Edge → Fog (si no hay gateway)
+    edge_upstream = gateway_nodes if has_gateway else fog_nodes
     nx.draw_networkx_edges(G, draw_pos,
-                        edgelist=edges_of(camera_nodes, fog_nodes)
-                                + edges_of(fog_nodes, camera_nodes),
+                        edgelist=edges_of(camera_nodes, edge_upstream)
+                                + edges_of(edge_upstream, camera_nodes),
             alpha=0.75, width=2.4, edge_color=colors["edge_link"],
                 style="dashed", connectionstyle="arc3,rad=0.05")
+    # Gateway ↔ Fog (solo si existe capa gateway)
+    if has_gateway:
+        nx.draw_networkx_edges(G, draw_pos,
+                            edgelist=edges_of(gateway_nodes, fog_nodes)
+                                    + edges_of(fog_nodes, gateway_nodes),
+                alpha=0.78, width=2.6, edge_color=colors["gateway_link"],
+                    style="-", connectionstyle="arc3,rad=0.06")
     # RPi4 ↔ RPi4 (WAN)
     nx.draw_networkx_edges(G, draw_pos,
                         edgelist=edges_of(fog_nodes, fog_nodes),
@@ -128,6 +153,11 @@ def visualize_topology(topology, positions, nodes_info, save_path=None):
                             node_color=colors["edge_node"], node_size=430,
                             node_shape="o", edgecolors=colors["edge_border"], linewidths=2,
                             label="Edge (Cámara IP 720p)")
+    if has_gateway:
+        nx.draw_networkx_nodes(G, draw_pos, nodelist=gateway_nodes,
+                                node_color=colors["gateway_node"], node_size=620,
+                                node_shape="h", edgecolors=colors["gateway_border"], linewidths=2.2,
+                                label="Gateway (tránsito de red)")
     nx.draw_networkx_nodes(G, draw_pos, nodelist=fog_nodes,
                             node_color=colors["fog_node"], node_size=920,
                             node_shape="s", edgecolors=colors["fog_border"], linewidths=2.6,
@@ -139,7 +169,7 @@ def visualize_topology(topology, positions, nodes_info, save_path=None):
 
     # ── Etiquetas ─────────────────────────────────────────────────────────
     nx.draw_networkx_labels(G, draw_pos,
-                            {n: nodes_info[n]["name"] for n in fog_nodes + cloud_nodes},
+                            {n: nodes_info[n]["name"] for n in gateway_nodes + fog_nodes + cloud_nodes},
                             font_size=8, font_weight="bold", font_color="#1f2a36")
     nx.draw_networkx_labels(G, draw_pos,
                             {n: nodes_info[n]["name"] for n in camera_nodes},
@@ -149,20 +179,34 @@ def visualize_topology(topology, positions, nodes_info, save_path=None):
     ax.set_ylim(0, 1)
     ax.axis("off")
     n_edge = len(camera_nodes)
+    n_gateway = len(gateway_nodes)
     n_fog = len(fog_nodes)
     n_cloud = len(cloud_nodes)
+    if has_gateway:
+        title = (
+            "Topología Smart City - Vista Jerárquica Edge/Gateway/Fog/Cloud\n"
+            f"{n_edge} Edge  +  {n_gateway} Gateway  +  {n_fog} Fog  +  {n_cloud} Cloud"
+        )
+    else:
+        title = (
+            "Topología Smart City - Vista Jerárquica Edge/Fog/Cloud\n"
+            f"{n_edge} Edge  +  {n_fog} Fog  +  {n_cloud} Cloud"
+        )
     plt.title(
-        "Topología Smart City - Vista Jerárquica Edge/Fog/Cloud\n"
-        f"{n_edge} Edge  +  {n_fog} Fog  +  {n_cloud} Cloud",
+        title,
         pad=12,
     )
 
     legend_items = [
-        Line2D([0], [0], color=colors["edge_link"], lw=2.2, linestyle="--", label="Edge -> Fog"),
+        Line2D([0], [0], color=colors["edge_link"], lw=2.2, linestyle="--",
+               label="Edge -> Gateway" if has_gateway else "Edge -> Fog"),
         Line2D([0], [0], color=colors["fog_link"], lw=2.8, linestyle="-", label="Fog <-> Fog"),
         Line2D([0], [0], color=colors["cloud_link"], lw=3, linestyle=":", label="Fog -> Cloud"),
         Line2D([0], [0], color=colors["dc_link"], lw=3.2, linestyle="-", label="Cloud <-> Cloud"),
     ]
+    if has_gateway:
+        legend_items.insert(1, Line2D([0], [0], color=colors["gateway_link"], lw=2.6,
+                                      linestyle="-", label="Gateway <-> Fog"))
     node_handles, node_labels = ax.get_legend_handles_labels()
     plt.legend(handles=node_handles + legend_items, loc="lower center", ncol=4, fontsize=9,
                 framealpha=0.95, facecolor="#ffffff", edgecolor="#a7b2bc")

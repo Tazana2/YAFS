@@ -70,9 +70,10 @@ class SimulationRecorder:
         self.csv_links_path = None
 
         # Clasificación de nodos por capa
-        self.edge_nodes  = [n for n, a in nodes_info.items() if a["type"] == "edge"]
-        self.fog_nodes   = [n for n, a in nodes_info.items() if a["type"] == "fog"]
-        self.cloud_nodes = [n for n, a in nodes_info.items() if a["type"] == "cloud"]
+        self.edge_nodes    = [n for n, a in nodes_info.items() if a["type"] == "edge"]
+        self.gateway_nodes = [n for n, a in nodes_info.items() if a["type"] == "gateway"]
+        self.fog_nodes     = [n for n, a in nodes_info.items() if a["type"] == "fog"]
+        self.cloud_nodes   = [n for n, a in nodes_info.items() if a["type"] == "cloud"]
 
         # Layout estable por capas para evitar jitter visual entre frames.
         self.draw_positions = self._build_layered_positions()
@@ -108,9 +109,16 @@ class SimulationRecorder:
             return {node: (x_pos, y_top - i * step) for i, node in enumerate(ordered)}
 
         pos = {}
-        pos.update(_layer(self.edge_nodes, 0.18, 0.08, 0.92))
-        pos.update(_layer(self.fog_nodes, 0.50, 0.12, 0.88))
-        pos.update(_layer(self.cloud_nodes, 0.82, 0.16, 0.84))
+        has_gateway = len(self.gateway_nodes) > 0
+        if has_gateway:
+            pos.update(_layer(self.edge_nodes, 0.12, 0.08, 0.92))
+            pos.update(_layer(self.gateway_nodes, 0.36, 0.10, 0.90))
+            pos.update(_layer(self.fog_nodes, 0.60, 0.12, 0.88))
+            pos.update(_layer(self.cloud_nodes, 0.84, 0.16, 0.84))
+        else:
+            pos.update(_layer(self.edge_nodes, 0.18, 0.08, 0.92))
+            pos.update(_layer(self.fog_nodes, 0.50, 0.12, 0.88))
+            pos.update(_layer(self.cloud_nodes, 0.82, 0.16, 0.84))
         return pos
 
     def _read_csv_counts(self):
@@ -191,12 +199,15 @@ class SimulationRecorder:
 
         palette = {
             "edge_lane": "#dce7ef",
+            "gateway_lane": "#e1ecdf",
             "fog_lane": "#ece4d7",
             "cloud_lane": "#eaddde",
             "edge_border": "#90a7b6",
+            "gateway_border": "#86a386",
             "fog_border": "#ad9468",
             "cloud_border": "#ad8484",
             "edge_link": "#2f6f8f",
+            "gateway_link": "#3f7b5b",
             "fog_link": "#8f6b32",
             "cloud_link": "#a54141",
             "dc_link": "#5d5776",
@@ -217,9 +228,16 @@ class SimulationRecorder:
             ax.add_patch(box)
             ax.text(x + 0.015, y + h - 0.03, label, fontsize=10, fontweight="bold", color="#22303c")
 
-        lane(0.05, 0.04, 0.24, 0.92, "EDGE", palette["edge_lane"], palette["edge_border"])
-        lane(0.37, 0.04, 0.26, 0.92, "FOG", palette["fog_lane"], palette["fog_border"])
-        lane(0.69, 0.04, 0.24, 0.92, "CLOUD", palette["cloud_lane"], palette["cloud_border"])
+        has_gateway = len(self.gateway_nodes) > 0
+        if has_gateway:
+            lane(0.02, 0.04, 0.20, 0.92, "EDGE", palette["edge_lane"], palette["edge_border"])
+            lane(0.26, 0.04, 0.20, 0.92, "GATEWAY", palette["gateway_lane"], palette["gateway_border"])
+            lane(0.50, 0.04, 0.20, 0.92, "FOG", palette["fog_lane"], palette["fog_border"])
+            lane(0.74, 0.04, 0.20, 0.92, "CLOUD", palette["cloud_lane"], palette["cloud_border"])
+        else:
+            lane(0.05, 0.04, 0.24, 0.92, "EDGE", palette["edge_lane"], palette["edge_border"])
+            lane(0.37, 0.04, 0.26, 0.92, "FOG", palette["fog_lane"], palette["fog_border"])
+            lane(0.69, 0.04, 0.24, 0.92, "CLOUD", palette["cloud_lane"], palette["cloud_border"])
 
         max_node   = max(max(node_counts.values(), default=1), 1)
         max_recent = max(max(recent_node.values(), default=1), 1)
@@ -231,6 +249,7 @@ class SimulationRecorder:
             return sizes, colors
 
         edge_sizes,  edge_c  = node_props(self.edge_nodes,  180,  380)
+        gateway_sizes, gateway_c = node_props(self.gateway_nodes, 300, 580)
         fog_sizes,   fog_c   = node_props(self.fog_nodes,   420, 780)
         cloud_sizes, cloud_c = node_props(self.cloud_nodes, 620, 1080)
 
@@ -238,8 +257,12 @@ class SimulationRecorder:
             return [base + scale * (recent_link.get(e, 0) / max_link_r) for e in elist]
 
         ee = [(u, v) for u, v in G.edges() if u in self.edge_nodes  and v in self.edge_nodes]
+        eg = [(u, v) for u, v in G.edges() if (u in self.edge_nodes and v in self.gateway_nodes)
+                            or (u in self.gateway_nodes and v in self.edge_nodes)]
         ef = [(u, v) for u, v in G.edges() if (u in self.edge_nodes and v in self.fog_nodes)
-                                            or (u in self.fog_nodes  and v in self.edge_nodes)]
+                            or (u in self.fog_nodes and v in self.edge_nodes)]
+        gf = [(u, v) for u, v in G.edges() if (u in self.gateway_nodes and v in self.fog_nodes)
+                            or (u in self.fog_nodes and v in self.gateway_nodes)]
         ff = [(u, v) for u, v in G.edges() if u in self.fog_nodes   and v in self.fog_nodes]
         fc = [(u, v) for u, v in G.edges() if (u in self.fog_nodes  and v in self.cloud_nodes)
                                             or (u in self.cloud_nodes and v in self.fog_nodes)]
@@ -258,13 +281,34 @@ class SimulationRecorder:
         nx.draw_networkx_edges(
             G,
             self.draw_positions,
-            edgelist=ef,
+            edgelist=eg,
             alpha=0.8,
-            width=ew(ef, 1.2, 3.6),
+            width=ew(eg, 1.2, 3.6),
             edge_color=palette["edge_link"],
             style="dashed",
             ax=ax,
             connectionstyle="arc3,rad=0.06",
+        )
+        nx.draw_networkx_edges(
+            G,
+            self.draw_positions,
+            edgelist=ef,
+            alpha=0.6,
+            width=ew(ef, 0.8, 2.3),
+            edge_color=palette["edge_link"],
+            style="dashed",
+            ax=ax,
+            connectionstyle="arc3,rad=0.05",
+        )
+        nx.draw_networkx_edges(
+            G,
+            self.draw_positions,
+            edgelist=gf,
+            alpha=0.8,
+            width=ew(gf, 1.1, 3.0),
+            edge_color=palette["gateway_link"],
+            ax=ax,
+            connectionstyle="arc3,rad=0.07",
         )
         nx.draw_networkx_edges(
             G,
@@ -302,6 +346,10 @@ class SimulationRecorder:
                                 node_color=edge_c, cmap=cm.Blues, vmin=0, vmax=1,
                                 node_size=edge_sizes, node_shape="o",
                                 edgecolors="#2b5f68", linewidths=1.3, ax=ax)
+        nx.draw_networkx_nodes(G, self.draw_positions, nodelist=self.gateway_nodes,
+                    node_color=gateway_c, cmap=cm.Greens, vmin=0, vmax=1,
+                    node_size=gateway_sizes, node_shape="h",
+                    edgecolors="#2f6b3d", linewidths=1.6, ax=ax)
         nx.draw_networkx_nodes(G, self.draw_positions, nodelist=self.fog_nodes,
                                 node_color=fog_c, cmap=cm.YlOrBr, vmin=0, vmax=1,
                                 node_size=fog_sizes, node_shape="s",
@@ -311,7 +359,7 @@ class SimulationRecorder:
                                 node_size=cloud_sizes, node_shape="D",
                                 edgecolors="#7f2b2b", linewidths=2.1, ax=ax)
 
-        important = {n: self.nodes_info[n]["name"] for n in self.fog_nodes + self.cloud_nodes}
+        important = {n: self.nodes_info[n]["name"] for n in self.gateway_nodes + self.fog_nodes + self.cloud_nodes}
         edge_lbl  = {n: str(n) for n in self.edge_nodes}
         nx.draw_networkx_labels(G, self.draw_positions, important,
                                 font_size=8, font_weight="bold",
@@ -329,7 +377,8 @@ class SimulationRecorder:
 
         legend_items = [
             Line2D([0], [0], color="#6ea873", lw=2.5, linestyle="-", label="Edge <-> Edge"),
-            Line2D([0], [0], color=palette["edge_link"], lw=2.8, linestyle="--", label="Edge <-> Fog"),
+            Line2D([0], [0], color=palette["edge_link"], lw=2.8, linestyle="--", label="Edge <-> Gateway/Fog"),
+            Line2D([0], [0], color=palette["gateway_link"], lw=2.8, linestyle="-", label="Gateway <-> Fog"),
             Line2D([0], [0], color=palette["fog_link"], lw=2.8, linestyle="-", label="Fog <-> Fog"),
             Line2D([0], [0], color=palette["cloud_link"], lw=2.8, linestyle=":", label="Fog <-> Cloud"),
             Line2D([0], [0], color=palette["dc_link"], lw=2.8, linestyle="-", label="Cloud <-> Cloud"),
@@ -337,7 +386,7 @@ class SimulationRecorder:
         ax.legend(
             handles=legend_items,
             loc="lower center",
-            ncol=5,
+            ncol=6,
             fontsize=8,
             framealpha=0.96,
             facecolor="#ffffff",
@@ -367,6 +416,7 @@ class SimulationRecorder:
         total_msgs  = sum(node_counts.values())
         total_rec   = sum(recent_node.values())
         edge_total  = sum(node_counts.get(n, 0) for n in self.edge_nodes)
+        gateway_total = sum(node_counts.get(n, 0) for n in self.gateway_nodes)
         fog_total   = sum(node_counts.get(n, 0) for n in self.fog_nodes)
         cloud_total = sum(node_counts.get(n, 0) for n in self.cloud_nodes)
 
@@ -382,6 +432,7 @@ class SimulationRecorder:
             f" Progreso         : {100*min(current_time/max(self.sim_until, 1), 1.0):>9.1f}%\n\n"
             "Mensajes acumulados\n"
             f" EDGE             : {edge_total:>10,}\n"
+            f" GATEWAY          : {gateway_total:>10,}\n"
             f" FOG              : {fog_total:>10,}\n"
             f" CLOUD            : {cloud_total:>10,}\n"
             f" TOTAL            : {total_msgs:>10,}\n\n"

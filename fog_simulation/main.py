@@ -17,16 +17,21 @@ def main():
 
     print("\n" + "=" * 70)
     print("  SIMULACION — CIUDAD INTELIGENTE MULTIAPP")
-    print("  Video + Sensores + Servicios Compartidos Edge/Fog/Cloud")
+    print("  Video + Sensores + Servicios Compartidos Edge/Gateway/Fog/Cloud")
     print("=" * 70 + "\n")
 
     # ── 1. Topología ──────────────────────────────────────────────────
-    print("Paso 1: Creando topologia multi-zona Edge/Fog/Cloud...")
-    topology, positions, nodes_info = create_edge_fog_cloud_topology()
+    print("Paso 1: Creando topologia multi-zona Edge/Gateway/Fog/Cloud...")
+    topology, positions, nodes_info = create_edge_fog_cloud_topology(
+        with_gateways=True,
+        gateways_per_zone=1,
+    )
     n_cameras = sum(1 for a in nodes_info.values() if a["type"] == "edge")
+    n_gateways = sum(1 for a in nodes_info.values() if a["type"] == "gateway")
     n_fog     = sum(1 for a in nodes_info.values() if a["type"] == "fog")
     n_cloud   = sum(1 for a in nodes_info.values() if a["type"] == "cloud")
     print(f"   {n_cameras} nodos edge (video/sensores)")
+    print(f"   {n_gateways} gateways de transito")
     print(f"   {n_fog} nodos fog (video/sensores/shared)")
     print(f"   {n_cloud} servicios cloud por rol")
     print(f"   {len(topology.G.edges())} enlaces de red\n")

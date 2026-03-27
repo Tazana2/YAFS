@@ -168,6 +168,10 @@ class KubernetesDefaultScheduler(Placement):
         for node_id in topology.G.nodes:
             node = topology.G.nodes[node_id]
 
+            # Gateways are transit-only network nodes and must never host modules.
+            if node.get("type") == "gateway":
+                continue
+
             # Plugin: NodeUnschedulable
             if node.get("unschedulable", False):
                 continue

@@ -10,6 +10,7 @@ from yafs.topology import Topology
 # CPU core counts by tier — used by KubernetesDefaultScheduler for resource accounting.
 _TIER_CPU = {
     "edge":  2,    # low-power IoT gateway / IP camera
+    "gateway": 1,  # transit-only network hop between edge and fog
     "fog":   16,   # overridden per-role below via cpu parameter
     "cloud": 128,  # cloud service (virtually unbounded)
 }
@@ -41,8 +42,16 @@ def _mk_node(name, zone, layer, role, model, ipt_mips, ram_mb, cost, watt, cpu=N
     }
 
 
-def create_edge_fog_cloud_topology():
-    """Crea una topologia por zonas para video, sensores y servicios compartidos."""
+def create_edge_fog_cloud_topology(with_gateways: bool = False, gateways_per_zone: int = 1):
+    """Crea una topologia por zonas para video, sensores y servicios compartidos.
+
+    Parameters
+    ----------
+    with_gateways : bool, optional
+        Si True, inserta nodos gateway de transito entre edge y fog.
+    gateways_per_zone : int, optional
+        Cantidad de gateways por zona cuando ``with_gateways`` esta activo.
+    """
     t = Topology()
     G = nx.DiGraph()
 
@@ -138,6 +147,31 @@ def create_edge_fog_cloud_topology():
             cpu=8,
         )
 
+    # Gateways de transito opcionales por zona (solo enrutamiento).
+    gateway_by_zone = {z: [] for z in [1, 2, 3]}
+    if with_gateways:
+        gateways_per_zone = max(1, int(gateways_per_zone))
+        for zone in [1, 2, 3]:
+            cx, cy = zone_centers[zone]
+            for idx in range(gateways_per_zone):
+                node_id = next_id
+                next_id += 1
+                x_off = -0.04 + (idx * 0.08 / max(1, gateways_per_zone - 1))
+                positions[node_id] = (cx + x_off, min(0.98, cy + 0.09))
+                all_nodes[node_id] = _mk_node(
+                    name=f"Gateway_Z{zone}_{idx}",
+                    zone=zone,
+                    layer="gateway",
+                    role="network_transit",
+                    model="Edge Transit Gateway",
+                    ipt_mips=500,
+                    ram_mb=256,
+                    cost=1,
+                    watt=2,
+                    cpu=1,
+                )
+                gateway_by_zone[zone].append(node_id)
+
     # Fog compartido para agregacion regional.
     fog_shared_nodes = []
     for idx, pos in enumerate([(0.35, 0.70), (0.65, 0.35)], start=1):
@@ -214,10 +248,23 @@ def create_edge_fog_cloud_topology():
         f_video = fog_video_by_zone[zone]
         f_sensor = fog_sensor_by_zone[zone]
 
-        for edge in video_by_zone[zone]:
-            links.append((edge, f_video, 1000, 4))
-        for edge in sensor_by_zone[zone]:
-            links.append((edge, f_sensor, 200, 3))
+        zone_gateways = gateway_by_zone.get(zone, [])
+        if with_gateways and zone_gateways:
+            for edge in video_by_zone[zone]:
+                gw = rng.choice(zone_gateways)
+                links.append((edge, gw, 1000, 2))
+            for edge in sensor_by_zone[zone]:
+                gw = rng.choice(zone_gateways)
+                links.append((edge, gw, 200, 2))
+
+            for gw in zone_gateways:
+                links.append((gw, f_video, 1000, 2))
+                links.append((gw, f_sensor, 200, 1))
+        else:
+            for edge in video_by_zone[zone]:
+                links.append((edge, f_video, 1000, 4))
+            for edge in sensor_by_zone[zone]:
+                links.append((edge, f_sensor, 200, 3))
 
     fog_all = fog_video_nodes + fog_sensor_nodes + fog_shared_nodes
     for idx, src in enumerate(fog_all):

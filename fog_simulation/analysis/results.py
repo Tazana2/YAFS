@@ -41,9 +41,10 @@ def analyze_results(results_path, nodes_info: dict):
         print("  Sin datos de procesamiento.")
         return
 
-    camera_nodes = [n for n, a in nodes_info.items() if a["type"] == "edge"]
-    fog_nodes    = [n for n, a in nodes_info.items() if a["type"] == "fog"]
-    cloud_nodes  = [n for n, a in nodes_info.items() if a["type"] == "cloud"]
+    camera_nodes  = [n for n, a in nodes_info.items() if a["type"] == "edge"]
+    gateway_nodes = [n for n, a in nodes_info.items() if a["type"] == "gateway"]
+    fog_nodes     = [n for n, a in nodes_info.items() if a["type"] == "fog"]
+    cloud_nodes   = [n for n, a in nodes_info.items() if a["type"] == "cloud"]
 
     # ── Por capa ──────────────────────────────────────────────────────────
     print("\n" + "-" * 70)
@@ -52,6 +53,7 @@ def analyze_results(results_path, nodes_info: dict):
 
     for label, icon, nodeset in [
         ("EDGE   (Ingestion)", "📷", camera_nodes),
+        ("GATEWAY(Transito)", "🟢", gateway_nodes),
         ("FOG    (Procesamiento)", "🟠", fog_nodes),
         ("CLOUD  (Servicios)", "☁️ ", cloud_nodes),
     ]:
@@ -96,13 +98,18 @@ def analyze_results(results_path, nodes_info: dict):
                 df_links["src"].isin(src_set) & df_links["dst"].isin(dst_set)
             ])
 
+        eg = link_count(camera_nodes, gateway_nodes) + link_count(gateway_nodes, camera_nodes)
+        gf = link_count(gateway_nodes, fog_nodes) + link_count(fog_nodes, gateway_nodes)
         cf = link_count(camera_nodes, fog_nodes) + link_count(fog_nodes, camera_nodes)
         fc = link_count(fog_nodes, cloud_nodes)  + link_count(cloud_nodes, fog_nodes)
 
-        print(f"\n Edge ↔ Fog   : {cf:,} transmisiones")
+        print(f"\n Edge ↔ Gateway : {eg:,} transmisiones")
+        print(f" Gateway ↔ Fog  : {gf:,} transmisiones")
+        print(f" Edge ↔ Fog     : {cf:,} transmisiones")
         print(f" Fog  ↔ Cloud : {fc:,} transmisiones")
-        if cf > 0:
-            ratio = fc / cf
+        baseline_edge = eg if eg > 0 else cf
+        if baseline_edge > 0:
+            ratio = fc / baseline_edge
             print(f"   Relación Cloud/Edge        : {ratio:.2%} (reducción por inferencia)")
 
     # ── Top 5 nodos más activos ────────────────────────────────────────────
