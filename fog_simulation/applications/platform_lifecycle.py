@@ -17,11 +17,11 @@ def create_platform_lifecycle_app() -> Application:
     app = Application(name="Platform_Lifecycle")
 
     app.set_modules([
-        {"simulation-service": {"Type": Application.TYPE_SOURCE}},
-        {"mlops-platform-service": {"RAM": 32768, "Type": Application.TYPE_MODULE}},
-        {"deployment-and-distribution-service": {"RAM": 2048, "Type": Application.TYPE_MODULE}},
-        {"api-and-access-service": {"RAM": 4096, "Type": Application.TYPE_MODULE}},
-        {"observability-service": {"Type": Application.TYPE_SINK}},
+        {"simulation-service":                  {"Type": Application.TYPE_SOURCE}},
+        {"mlops-platform-service":              {"RAM": 32768, "CPU_req": 8, "RAM_req": 32768, "Type": Application.TYPE_MODULE}},
+        {"deployment-and-distribution-service": {"RAM": 2048,  "CPU_req": 2, "RAM_req": 2048,  "Type": Application.TYPE_MODULE}},
+        {"api-and-access-service":              {"RAM": 4096,  "CPU_req": 1, "RAM_req": 4096,  "Type": Application.TYPE_MODULE}},
+        {"observability-service":               {"Type": Application.TYPE_SINK}},
     ])
 
     m_training_batch = Message(

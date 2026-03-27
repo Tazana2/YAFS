@@ -22,16 +22,16 @@ def create_sensor_climatology_app() -> Application:
     app = Application(name="Urban_Sensor_Climatology")
 
     app.set_modules([
-        {"edge-sensor-ingestion-service": {"Type": Application.TYPE_SOURCE}},
-        {"climatology-integration-service": {"Type": Application.TYPE_SOURCE}},
-        {"edge-sensor-preprocessing-service": {"RAM": 1024, "Type": Application.TYPE_MODULE}},
-        {"sensor-stream-processing-service": {"RAM": 4096, "Type": Application.TYPE_MODULE}},
-        {"sensor-prediction-service": {"RAM": 8192, "Type": Application.TYPE_MODULE}},
-        {"storage-service": {"RAM": 16384, "Type": Application.TYPE_MODULE}},
-        {"api-and-access-service": {"RAM": 4096, "Type": Application.TYPE_MODULE}},
-        {"visualization-service": {"Type": Application.TYPE_SINK}},
-        {"notification-service": {"Type": Application.TYPE_SINK}},
-        {"observability-service": {"Type": Application.TYPE_SINK}},
+        {"edge-sensor-ingestion-service":      {"Type": Application.TYPE_SOURCE}},
+        {"climatology-integration-service":    {"Type": Application.TYPE_SOURCE}},
+        {"edge-sensor-preprocessing-service": {"RAM": 1024,  "CPU_req": 1, "RAM_req": 1024,  "Type": Application.TYPE_MODULE}},
+        {"sensor-stream-processing-service":  {"RAM": 4096,  "CPU_req": 2, "RAM_req": 4096,  "Type": Application.TYPE_MODULE}},
+        {"sensor-prediction-service":         {"RAM": 8192,  "CPU_req": 4, "RAM_req": 8192,  "Type": Application.TYPE_MODULE}},
+        {"storage-service":                   {"RAM": 16384, "CPU_req": 2, "RAM_req": 16384, "Type": Application.TYPE_MODULE}},
+        {"api-and-access-service":            {"RAM": 4096,  "CPU_req": 1, "RAM_req": 4096,  "Type": Application.TYPE_MODULE}},
+        {"visualization-service":             {"Type": Application.TYPE_SINK}},
+        {"notification-service":              {"Type": Application.TYPE_SINK}},
+        {"observability-service":             {"Type": Application.TYPE_SINK}},
     ])
 
     m_sensor_raw = Message(

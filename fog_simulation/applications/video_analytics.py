@@ -21,15 +21,15 @@ def create_video_analytics_app() -> Application:
     app = Application(name="Urban_Video_Analytics")
 
     app.set_modules([
-        {"edge-video-ingestion-service": {"Type": Application.TYPE_SOURCE}},
-        {"edge-inference-service": {"RAM": 4096, "Type": Application.TYPE_MODULE}},
-        {"tracking-and-event-service": {"RAM": 3072, "Type": Application.TYPE_MODULE}},
-        {"video-stream-processing-service": {"RAM": 8192, "Type": Application.TYPE_MODULE}},
-        {"storage-service": {"RAM": 16384, "Type": Application.TYPE_MODULE}},
-        {"api-and-access-service": {"RAM": 4096, "Type": Application.TYPE_MODULE}},
-        {"visualization-service": {"Type": Application.TYPE_SINK}},
-        {"notification-service": {"Type": Application.TYPE_SINK}},
-        {"observability-service": {"Type": Application.TYPE_SINK}},
+        {"edge-video-ingestion-service":    {"Type": Application.TYPE_SOURCE}},
+        {"edge-inference-service":           {"RAM": 4096,  "CPU_req": 2, "RAM_req": 4096,  "Type": Application.TYPE_MODULE}},
+        {"tracking-and-event-service":       {"RAM": 3072,  "CPU_req": 1, "RAM_req": 3072,  "Type": Application.TYPE_MODULE}},
+        {"video-stream-processing-service":  {"RAM": 8192,  "CPU_req": 4, "RAM_req": 8192,  "Type": Application.TYPE_MODULE}},
+        {"storage-service":                  {"RAM": 16384, "CPU_req": 2, "RAM_req": 16384, "Type": Application.TYPE_MODULE}},
+        {"api-and-access-service":           {"RAM": 4096,  "CPU_req": 1, "RAM_req": 4096,  "Type": Application.TYPE_MODULE}},
+        {"visualization-service":            {"Type": Application.TYPE_SINK}},
+        {"notification-service":             {"Type": Application.TYPE_SINK}},
+        {"observability-service":            {"Type": Application.TYPE_SINK}},
     ])
 
     # Batches preprocesados de 4-8 frames comprimidos.

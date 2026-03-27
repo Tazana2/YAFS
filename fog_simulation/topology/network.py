@@ -7,17 +7,37 @@ import networkx as nx
 from yafs.topology import Topology
 
 
-def _mk_node(name, zone, layer, role, model, ipt_mips, ram_mb, cost, watt):
+# CPU core counts by tier — used by KubernetesDefaultScheduler for resource accounting.
+_TIER_CPU = {
+    "edge":  2,    # low-power IoT gateway / IP camera
+    "fog":   16,   # overridden per-role below via cpu parameter
+    "cloud": 128,  # cloud service (virtually unbounded)
+}
+
+
+def _mk_node(name, zone, layer, role, model, ipt_mips, ram_mb, cost, watt, cpu=None):
+    """
+    Build a node attribute dict for YAFS.
+
+    ``cpu`` overrides the default tier value so fog nodes of different roles
+    (Edge GPU vs. Fog Node vs. Regional Fog) get distinct core counts.
+    """
+    cpu_cores = cpu if cpu is not None else _TIER_CPU.get(layer, 4)
     return {
-        "name": name,
-        "zone": zone,
-        "type": layer,
-        "role": role,
-        "model": model,
-        "IPT": ipt_mips * 10**6,
-        "RAM": ram_mb,
-        "COST": cost,
-        "WATT": watt,
+        "name":          name,
+        "zone":          zone,
+        "type":          layer,
+        "role":          role,
+        "model":         model,
+        "IPT":           ipt_mips * 10**6,
+        "RAM":           ram_mb,
+        "COST":          cost,
+        "WATT":          watt,
+        # --- K8s scheduler resource accounting ---
+        "CPU":           cpu_cores,
+        "CPU_used":      0,
+        "RAM_used":      0,
+        "unschedulable": False,
     }
 
 
@@ -55,6 +75,7 @@ def create_edge_fog_cloud_topology():
                 ram_mb=512,
                 cost=1,
                 watt=5,
+                cpu=2,
             )
 
     # Edge de sensores: 4 nodos por zona.
@@ -74,6 +95,7 @@ def create_edge_fog_cloud_topology():
                 ram_mb=512,
                 cost=1,
                 watt=3,
+                cpu=2,
             )
 
     # Fog de video y sensores por zona.
@@ -96,6 +118,7 @@ def create_edge_fog_cloud_topology():
             ram_mb=8192,
             cost=3,
             watt=18,
+            cpu=8,
         )
 
         node_id = next_id
@@ -112,6 +135,7 @@ def create_edge_fog_cloud_topology():
             ram_mb=6144,
             cost=3,
             watt=14,
+            cpu=8,
         )
 
     # Fog compartido para agregacion regional.
@@ -131,6 +155,7 @@ def create_edge_fog_cloud_topology():
             ram_mb=16384,
             cost=4,
             watt=28,
+            cpu=32,
         )
 
     # Cloud por rol.
@@ -169,6 +194,7 @@ def create_edge_fog_cloud_topology():
             ram_mb=65536,
             cost=5,
             watt=180,
+            cpu=128,
         )
 
     for node_id, attrs in all_nodes.items():
