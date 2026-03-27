@@ -23,7 +23,14 @@ from matplotlib.lines import Line2D
 import networkx as nx
 
 
-def visualize_topology(topology, positions, nodes_info, save_path=None):
+def visualize_topology(
+    topology,
+    positions,
+    nodes_info,
+    save_path=None,
+    pod_allocations=None,
+    title_suffix=None,
+):
     """
     Dibuja la topología del parqueadero y, opcionalmente, la guarda en disco.
 
@@ -32,7 +39,9 @@ def visualize_topology(topology, positions, nodes_info, save_path=None):
     topology   : Topology de YAFS.
     positions  : dict {node_id: (x, y)}.
     nodes_info : dict {node_id: {...}} con atributos.
-    save_path  : ruta de salida del PNG (None = no guarda).
+    save_path       : ruta de salida del PNG (None = no guarda).
+    pod_allocations : dict {node_id: ["App#Module", ...]} para overlay de pods.
+    title_suffix    : texto adicional para el titulo.
     """
     G = topology.G
 
@@ -175,6 +184,46 @@ def visualize_topology(topology, positions, nodes_info, save_path=None):
                             {n: nodes_info[n]["name"] for n in camera_nodes},
                             font_size=7, font_color="#2b5f68")
 
+    # Overlay opcional de pods desplegados por nodo para visualizar scheduling.
+    if pod_allocations:
+        for node_id, deployed in pod_allocations.items():
+            if node_id not in draw_pos:
+                continue
+            if not deployed:
+                continue
+
+            x, y = draw_pos[node_id]
+            pod_count = len(deployed)
+
+            module_names = []
+            for pod in deployed:
+                if "#" in pod:
+                    module_names.append(pod.split("#", 1)[1])
+                else:
+                    module_names.append(str(pod))
+            shown = module_names[:2]
+            text = f"pods: {pod_count}"
+            if shown:
+                text += "\n" + ", ".join(shown)
+            if len(module_names) > 2:
+                text += ", ..."
+
+            ax.text(
+                x + 0.02,
+                y + 0.02,
+                text,
+                fontsize=7,
+                color="#1f2a36",
+                zorder=5,
+                bbox=dict(
+                    boxstyle="round,pad=0.2",
+                    facecolor="#ffffff",
+                    edgecolor="#6f7d8a",
+                    linewidth=0.9,
+                    alpha=0.92,
+                ),
+            )
+
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.axis("off")
@@ -192,6 +241,8 @@ def visualize_topology(topology, positions, nodes_info, save_path=None):
             "Topología Smart City - Vista Jerárquica Edge/Fog/Cloud\n"
             f"{n_edge} Edge  +  {n_fog} Fog  +  {n_cloud} Cloud"
         )
+    if title_suffix:
+        title += f"\n{title_suffix}"
     plt.title(
         title,
         pad=12,

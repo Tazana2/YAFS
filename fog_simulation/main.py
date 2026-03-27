@@ -73,6 +73,18 @@ def main():
     print("\nPaso 5: Ejecutando simulación...")
     sim, results_path = run_simulation(topology, stop_time=50_000, recorder=recorder)
 
+    # ── 5.1 Mapa de scheduling (pods por nodo) ───────────────────────
+    print("\nPaso 5.1: Exportando mapa de scheduling (pods por nodo)...")
+    pod_allocations = sim.get_alloc_entities()
+    visualize_topology(
+        topology,
+        positions,
+        nodes_info,
+        save_path=str(results_path / "scheduling_pods_topology.png"),
+        pod_allocations=pod_allocations,
+        title_suffix="Estado final de scheduling (pods por nodo)",
+    )
+
     # ── 6. Video ──────────────────────────────────────────────────────
     print("\nPaso 6: Generando video de la simulación...")
     recorder.make_video(
@@ -91,6 +103,7 @@ def main():
     print(f"\nResultados en: {results_path}/")
     print("\nArchivos generados:")
     print("   • topology_fog_simulation.png — Topologia de la red")
+    print("   • scheduling_pods_topology.png — Topologia con pods por nodo")
     print("   • deployment_diagram.png  — Flujos A y B diferenciados")
     print("   • fog_simulation_topology.gexf   — Topologia (Gephi)")
     print("   • fog_simulation_topology.graphml— Topologia (GraphML)")
