@@ -28,7 +28,15 @@ def _nodes_by_role(topology):
     fog_video   = [n for n, a in nodes if a.get("type") == "fog"   and a.get("role") == "video_processing"]
     fog_sensor  = [n for n, a in nodes if a.get("type") == "fog"   and a.get("role") == "sensor_processing"]
     fog_shared  = [n for n, a in nodes if a.get("type") == "fog"   and a.get("role") == "shared_processing"]
-    cloud       = {a.get("role"): n for n, a in nodes if a.get("type") == "cloud"}
+
+    cloud_nodes = [n for n, a in nodes if a.get("type") == "cloud"]
+    cloud = {a.get("role"): n for n, a in nodes if a.get("type") == "cloud"}
+
+    if cloud_nodes:
+        default_cloud = cloud_nodes[0]
+        for role in ["storage", "api_access", "visualization", "notification", "observability", "mlops", "deployment"]:
+            cloud.setdefault(role, default_cloud)
+
     return edge_video, edge_sensor, fog_video, fog_sensor, fog_shared, cloud
 
 
@@ -85,9 +93,9 @@ def run_simulation(topology, stop_time: int = 50_000, recorder=None):
     sim = Sim(topology, default_results_path=str(results_path / "sim_trace"))
 
     print("\nDesplegando aplicaciones con K8s scheduler...")
+    sim.deploy_app(app_platform, k8s_scheduler, selector)
     sim.deploy_app(app_video,    k8s_scheduler, selector)
     sim.deploy_app(app_sensor,   k8s_scheduler, selector)
-    sim.deploy_app(app_platform, k8s_scheduler, selector)
 
     # ── Sinks: always pinned to their cloud node (managed services) ────────
     sim.deploy_sink(app_video.name,    cloud["visualization"],  "visualization-service")

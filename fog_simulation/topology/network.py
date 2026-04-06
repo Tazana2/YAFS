@@ -192,44 +192,25 @@ def create_edge_fog_cloud_topology(with_gateways: bool = False, gateways_per_zon
             cpu=32,
         )
 
-    # Cloud por rol.
-    cloud_roles = [
-        "storage",
-        "api_access",
-        "visualization",
-        "notification",
-        "observability",
-        "mlops",
-        "deployment",
-    ]
-    cloud_positions = [
-        (0.20, 0.06),
-        (0.32, 0.06),
-        (0.44, 0.06),
-        (0.56, 0.06),
-        (0.68, 0.06),
-        (0.80, 0.06),
-        (0.92, 0.06),
-    ]
-
+    # Cloud centralizado: un solo nodo para servicios gestionados.
+    # RAM dimensionada para alojar MLOps y backends de almacenamiento.
     cloud_nodes = []
-    for role, pos in zip(cloud_roles, cloud_positions):
-        node_id = next_id
-        next_id += 1
-        cloud_nodes.append(node_id)
-        positions[node_id] = pos
-        all_nodes[node_id] = _mk_node(
-            name=f"Cloud_{role}",
-            zone=0,
-            layer="cloud",
-            role=role,
-            model="Cloud Service",
-            ipt_mips=100000,
-            ram_mb=65536,
-            cost=5,
-            watt=180,
-            cpu=128,
-        )
+    node_id = next_id
+    next_id += 1
+    cloud_nodes.append(node_id)
+    positions[node_id] = (0.56, 0.06)
+    all_nodes[node_id] = _mk_node(
+        name="Cloud_core",
+        zone=0,
+        layer="cloud",
+        role="cloud_core",
+        model="Cloud Service Hub",
+        ipt_mips=100000,
+        ram_mb=81920,
+        cost=5,
+        watt=180,
+        cpu=16,
+    )
 
     for node_id, attrs in all_nodes.items():
         G.add_node(node_id, **attrs)
