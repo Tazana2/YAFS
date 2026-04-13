@@ -189,7 +189,7 @@ def create_edge_fog_cloud_topology(with_gateways: bool = False, gateways_per_zon
             ram_mb=16384,
             cost=4,
             watt=28,
-            cpu=32,
+            cpu=8,
         )
 
     # Cloud centralizado: un solo nodo para servicios gestionados.
@@ -206,7 +206,7 @@ def create_edge_fog_cloud_topology(with_gateways: bool = False, gateways_per_zon
         role="cloud_core",
         model="Cloud Service Hub",
         ipt_mips=100000,
-        ram_mb=81920,
+        ram_mb=65536,
         cost=5,
         watt=180,
         cpu=16,
