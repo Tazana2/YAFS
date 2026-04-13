@@ -16,6 +16,19 @@ _TIER_CPU = {
 }
 
 
+# Link profiles used to emulate realistic heterogeneous backhaul/media.
+# BW and PR map directly to YAFS edge attributes.
+_LINK_PROFILES = {
+    "fiber_access": {"BW": 1000, "PR": 2, "medium": "fiber"},
+    "wireless_access": {"BW": 250, "PR": 5, "medium": "wireless"},
+    "metro_fiber": {"BW": 800, "PR": 4, "medium": "fiber"},
+    "regional_fiber": {"BW": 450, "PR": 12, "medium": "fiber"},
+    "microwave_backhaul": {"BW": 180, "PR": 22, "medium": "microwave"},
+    "satellite_backhaul": {"BW": 40, "PR": 140, "medium": "satellite"},
+    "cloud_backbone": {"BW": 2000, "PR": 3, "medium": "fiber"},
+}
+
+
 def _mk_node(name, zone, layer, role, model, ipt_mips, ram_mb, cost, watt, cpu=None):
     """
     Build a node attribute dict for YAFS.
@@ -43,7 +56,7 @@ def _mk_node(name, zone, layer, role, model, ipt_mips, ram_mb, cost, watt, cpu=N
 
 
 def create_edge_fog_cloud_topology(with_gateways: bool = False, gateways_per_zone: int = 1):
-    """Crea una topologia por zonas para video, sensores y servicios compartidos.
+    """Crea una topologia por zonas con enlaces heterogeneos y conectividad parcial.
 
     Parameters
     ----------
@@ -217,6 +230,9 @@ def create_edge_fog_cloud_topology(with_gateways: bool = False, gateways_per_zon
 
     links = []
 
+    def add_link(src, dst, profile_name, link_class):
+        links.append((src, dst, profile_name, link_class))
+
     video_edges = [n for n, a in all_nodes.items() if a["type"] == "edge" and a["role"] == "video_ingestion"]
     sensor_edges = [n for n, a in all_nodes.items() if a["type"] == "edge" and a["role"] == "sensor_ingestion"]
 
@@ -233,36 +249,112 @@ def create_edge_fog_cloud_topology(with_gateways: bool = False, gateways_per_zon
         if with_gateways and zone_gateways:
             for edge in video_by_zone[zone]:
                 gw = rng.choice(zone_gateways)
-                links.append((edge, gw, 1000, 2))
+                add_link(edge, gw, "fiber_access", "edge_access")
             for edge in sensor_by_zone[zone]:
                 gw = rng.choice(zone_gateways)
-                links.append((edge, gw, 200, 2))
+                add_link(edge, gw, "wireless_access", "edge_access")
 
             for gw in zone_gateways:
-                links.append((gw, f_video, 1000, 2))
-                links.append((gw, f_sensor, 200, 1))
+                add_link(gw, f_video, "fiber_access", "gateway_uplink")
+                add_link(gw, f_sensor, "wireless_access", "gateway_uplink")
         else:
             for edge in video_by_zone[zone]:
-                links.append((edge, f_video, 1000, 4))
+                add_link(edge, f_video, "fiber_access", "edge_uplink")
             for edge in sensor_by_zone[zone]:
-                links.append((edge, f_sensor, 200, 3))
+                add_link(edge, f_sensor, "wireless_access", "edge_uplink")
 
-    fog_all = fog_video_nodes + fog_sensor_nodes + fog_shared_nodes
-    for idx, src in enumerate(fog_all):
-        for dst in fog_all[idx + 1:]:
-            links.append((src, dst, 300, 10))
+    # Fog fabric (phase 1 realism): sparse and geography-aware.
+    # 1) Intra-zone: local video/sensor fog pair.
+    for zone in [1, 2, 3]:
+        add_link(
+            fog_video_by_zone[zone],
+            fog_sensor_by_zone[zone],
+            "metro_fiber",
+            "intra_zone_fog",
+        )
 
-    for fnode in fog_all:
+    # 2) Zone-to-regional aggregation: no full mesh.
+    shared_west = fog_shared_nodes[0] if len(fog_shared_nodes) >= 1 else None
+    shared_east = fog_shared_nodes[1] if len(fog_shared_nodes) >= 2 else shared_west
+
+    zone_to_shared = {
+        1: [shared_west],
+        2: [shared_west, shared_east],  # central zone has dual-homing.
+        3: [shared_east],
+    }
+
+    for zone in [1, 2, 3]:
+        shared_targets = [sid for sid in zone_to_shared[zone] if sid is not None]
+        if not shared_targets:
+            continue
+
+        add_link(
+            fog_video_by_zone[zone],
+            shared_targets[0],
+            "regional_fiber",
+            "fog_uplink_primary",
+        )
+        add_link(
+            fog_sensor_by_zone[zone],
+            shared_targets[0],
+            "regional_fiber",
+            "fog_uplink_primary",
+        )
+
+        # Optional backup in the central zone through a different medium.
+        if len(shared_targets) > 1:
+            add_link(
+                fog_video_by_zone[zone],
+                shared_targets[1],
+                "microwave_backhaul",
+                "fog_uplink_backup",
+            )
+
+    # 3) Inter-regional shared fog link.
+    if len(fog_shared_nodes) > 1:
+        add_link(
+            fog_shared_nodes[0],
+            fog_shared_nodes[1],
+            "microwave_backhaul",
+            "inter_region_fog",
+        )
+
+    # 4) Cloud uplinks: shared fogs have strong fiber uplinks.
+    for fnode in fog_shared_nodes:
         for cnode in cloud_nodes:
-            links.append((fnode, cnode, 150, 60))
+            add_link(fnode, cnode, "regional_fiber", "cloud_uplink_primary")
+
+    # 5) Selected direct uplinks for heterogeneity and regional asymmetry.
+    if cloud_nodes:
+        cloud_core = cloud_nodes[0]
+        add_link(
+            fog_video_by_zone[2],
+            cloud_core,
+            "wireless_access",
+            "cloud_uplink_backup",
+        )
+        add_link(
+            fog_sensor_by_zone[3],
+            cloud_core,
+            "satellite_backhaul",
+            "cloud_uplink_remote",
+        )
 
     for idx, src in enumerate(cloud_nodes):
         for dst in cloud_nodes[idx + 1:]:
-            links.append((src, dst, 10000, 2))
+            add_link(src, dst, "cloud_backbone", "cloud_core")
 
-    for src, dst, bw, pr in links:
-        G.add_edge(src, dst, BW=bw, PR=pr)
-        G.add_edge(dst, src, BW=bw, PR=pr)
+    for src, dst, profile_name, link_class in links:
+        profile = _LINK_PROFILES[profile_name]
+        attrs = {
+            "BW": profile["BW"],
+            "PR": profile["PR"],
+            "LINK_PROFILE": profile_name,
+            "LINK_MEDIUM": profile["medium"],
+            "LINK_CLASS": link_class,
+        }
+        G.add_edge(src, dst, **attrs)
+        G.add_edge(dst, src, **attrs)
 
     t.G = G
     return t, positions, all_nodes
