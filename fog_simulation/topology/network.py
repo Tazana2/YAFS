@@ -29,6 +29,38 @@ _LINK_PROFILES = {
 }
 
 
+def _sample_fog_capacity(rng, role):
+    """Sample heterogeneous fog resources within [2-8] CPU cores and [2-16] GB RAM."""
+    cpu_options_by_role = {
+        "video_processing": [4, 6, 8],
+        "sensor_processing": [2, 4, 6],
+        "shared_processing": [4, 6, 8],
+    }
+    ram_options_by_role = {
+        "video_processing": [4096, 8192, 12288, 16384],
+        "sensor_processing": [2048, 4096, 6144, 8192],
+        "shared_processing": [8192, 12288, 16384],
+    }
+
+    cpu_cores = rng.choice(cpu_options_by_role.get(role, [2, 4, 6, 8]))
+    ram_mb = rng.choice(ram_options_by_role.get(role, [2048, 4096, 8192, 12288, 16384]))
+    return cpu_cores, ram_mb
+
+
+def _estimate_watt(cpu_cores, ram_mb, role, rng):
+    """Approximate node power draw from role baseline plus provisioned CPU/RAM."""
+    role_base = {
+        "video_processing": 8.5,
+        "sensor_processing": 6.0,
+        "shared_processing": 10.5,
+    }
+    base_watt = role_base.get(role, 7.0)
+    ram_gb = ram_mb / 1024.0
+    jitter = rng.uniform(-0.8, 0.8)
+    watt = base_watt + (1.4 * cpu_cores) + (0.35 * ram_gb) + jitter
+    return max(4, int(round(watt)))
+
+
 def _mk_node(name, zone, layer, role, model, ipt_mips, ram_mb, cost, watt, cpu=None):
     """
     Build a node attribute dict for YAFS.
@@ -126,6 +158,9 @@ def create_edge_fog_cloud_topology(with_gateways: bool = False, gateways_per_zon
     for zone in [1, 2, 3]:
         cx, cy = zone_centers[zone]
 
+        video_cpu, video_ram = _sample_fog_capacity(rng, "video_processing")
+        video_watt = _estimate_watt(video_cpu, video_ram, "video_processing", rng)
+
         node_id = next_id
         next_id += 1
         fog_video_nodes.append(node_id)
@@ -137,11 +172,14 @@ def create_edge_fog_cloud_topology(with_gateways: bool = False, gateways_per_zon
             role="video_processing",
             model="Edge GPU Node",
             ipt_mips=12000,
-            ram_mb=8192,
+            ram_mb=video_ram,
             cost=3,
-            watt=18,
-            cpu=8,
+            watt=video_watt,
+            cpu=video_cpu,
         )
+
+        sensor_cpu, sensor_ram = _sample_fog_capacity(rng, "sensor_processing")
+        sensor_watt = _estimate_watt(sensor_cpu, sensor_ram, "sensor_processing", rng)
 
         node_id = next_id
         next_id += 1
@@ -154,10 +192,10 @@ def create_edge_fog_cloud_topology(with_gateways: bool = False, gateways_per_zon
             role="sensor_processing",
             model="Fog Node",
             ipt_mips=8000,
-            ram_mb=6144,
+            ram_mb=sensor_ram,
             cost=3,
-            watt=14,
-            cpu=8,
+            watt=sensor_watt,
+            cpu=sensor_cpu,
         )
 
     # Gateways de transito opcionales por zona (solo enrutamiento).
@@ -188,6 +226,9 @@ def create_edge_fog_cloud_topology(with_gateways: bool = False, gateways_per_zon
     # Fog compartido para agregacion regional.
     fog_shared_nodes = []
     for idx, pos in enumerate([(0.35, 0.70), (0.65, 0.35)], start=1):
+        shared_cpu, shared_ram = _sample_fog_capacity(rng, "shared_processing")
+        shared_watt = _estimate_watt(shared_cpu, shared_ram, "shared_processing", rng)
+
         node_id = next_id
         next_id += 1
         fog_shared_nodes.append(node_id)
@@ -199,10 +240,10 @@ def create_edge_fog_cloud_topology(with_gateways: bool = False, gateways_per_zon
             role="shared_processing",
             model="Regional Fog",
             ipt_mips=15000,
-            ram_mb=16384,
+            ram_mb=shared_ram,
             cost=4,
-            watt=28,
-            cpu=8,
+            watt=shared_watt,
+            cpu=shared_cpu,
         )
 
     # Cloud centralizado: un solo nodo para servicios gestionados.
