@@ -11,7 +11,7 @@ from pathlib import Path
 
 from yafs.core import Sim
 from yafs.path_routing import DeviceSpeedAwareRouting
-from yafs.distribution import deterministic_distribution
+from yafs.distribution import exponential_distribution
 
 from fog_simulation.applications import (
     create_platform_lifecycle_app,
@@ -118,12 +118,12 @@ def run_simulation(topology, stop_time: int = 50_000, recorder=None):
 
     for cam_id in edge_video:
         msg  = app_video.get_message("M.Video.Batch")
-        dist = deterministic_distribution(1200, name=f"VideoSource_{cam_id}")
+        dist = exponential_distribution(lambd=1200, seed=1000 + cam_id, name=f"VideoSource_{cam_id}")
         sim.deploy_source(app_video.name, id_node=cam_id, msg=msg, distribution=dist)
 
     for sensor_id in edge_sensor:
         msg  = app_sensor.get_message("M.Sensor.Batch.Raw")
-        dist = deterministic_distribution(1000, name=f"SensorSource_{sensor_id}")
+        dist = exponential_distribution(lambd=1000, seed=2000 + sensor_id, name=f"SensorSource_{sensor_id}")
         sim.deploy_source(app_sensor.name, id_node=sensor_id, msg=msg, distribution=dist)
 
     climate_src_node = fog_shared[0] if fog_shared else fog_sensor[0]
@@ -131,19 +131,19 @@ def run_simulation(topology, stop_time: int = 50_000, recorder=None):
         app_sensor.name,
         id_node=climate_src_node,
         msg=app_sensor.get_message("M.Climate.Sync"),
-        distribution=deterministic_distribution(30000, name="ClimateSync"),
+        distribution=exponential_distribution(lambd=30000, seed=3001, name="ClimateSync"),
     )
 
     sim.deploy_source(
         app_platform.name,
         id_node=cloud["mlops"],
         msg=app_platform.get_message("M.Platform.TrainingBatch"),
-        distribution=deterministic_distribution(20000, name="PlatformTraining"),
+        distribution=exponential_distribution(lambd=20000, seed=4001, name="PlatformTraining"),
     )
 
     print(f"✓ {len(edge_video)}  fuentes de video desplegadas")
     print(f"✓ {len(edge_sensor)} fuentes de sensores desplegadas")
-    print("✓ Fuente periodica de climatologia y ciclo MLOps desplegada")
+    print("✓ Fuentes de climatologia y ciclo MLOps desplegadas")
 
     # ── Recorder ──────────────────────────────────────────────────────────
     if recorder is not None:
