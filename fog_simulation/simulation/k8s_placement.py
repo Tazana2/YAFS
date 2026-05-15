@@ -21,8 +21,16 @@ Only ``TYPE_MODULE`` services go through the scheduler.  Pure sources
 DaemonSets and managed cloud endpoints.
 """
 
+from typing import Optional
+
 from yafs.placement import Placement
 from yafs.application import Application
+
+from fog_simulation.simulation.resource_accounting import ResourceAccounting
+from fog_simulation.simulation.service_metadata import (
+    get_module_attrs,
+    normalize_service_profile,
+)
 
 
 class KubernetesDefaultScheduler(Placement):
@@ -38,10 +46,19 @@ class KubernetesDefaultScheduler(Placement):
         Default: True.
     """
 
-    def __init__(self, name, verbose: bool = True):
+    def __init__(
+        self,
+        name,
+        verbose: bool = True,
+        resource_accounting: Optional[ResourceAccounting] = None,
+        default_node_bw: float = 1000.0,
+    ):
         super().__init__(name)
         self.verbose = verbose
+        self.resource_accounting = resource_accounting
+        self.default_node_bw = default_node_bw
         self._decisions: list[dict] = []   # log of all binding decisions
+        self._failed_decisions: list[dict] = []
         """Records every scheduling decision made during initial_allocation."""
 
     # ------------------------------------------------------------------ #
@@ -61,6 +78,7 @@ class KubernetesDefaultScheduler(Placement):
         """
         app = sim.apps[app_name]
         topology = sim.topology
+        accounting = self._get_resource_accounting(topology)
 
         # Build module_name → raw attribute dict from app.data
         # (app.data is the list passed to Application.set_modules())
@@ -76,9 +94,10 @@ class KubernetesDefaultScheduler(Placement):
 
         scheduled = 0
         skipped   = 0
+        failed    = 0
 
         for module_name, services in app.services.items():
-            attrs     = module_attrs.get(module_name, {})
+            attrs     = module_attrs.get(module_name, get_module_attrs(app, module_name))
             node_type = attrs.get("Type", Application.TYPE_MODULE)
 
             # Sources and sinks are never pod-scheduled
@@ -93,34 +112,51 @@ class KubernetesDefaultScheduler(Placement):
                 skipped += 1
                 continue
 
-            # Build a lightweight "pod spec" for filter/score
-            pod = {
-                "name":    module_name,
-                "CPU_req": attrs.get("CPU_req", 0),
-                "RAM_req": attrs.get("RAM_req", 0),
-            }
+            # Build a scheduler profile while preserving existing app fields.
+            pod = normalize_service_profile(app_name, module_name, attrs)
 
             # ── Phase 1: Filtering ────────────────────────────────────────
-            candidates = self._filter_nodes(topology, pod)
+            candidates, rejected = self._filter_nodes(topology, pod, accounting)
 
             if not candidates:
                 print(
                     f"  [K8s Scheduler] WARNING — no feasible node for "
                     f"'{module_name}' in '{app_name}'. Module not deployed."
                 )
+                if self.verbose and rejected:
+                    print("    rejection summary:")
+                    for node_id, reasons in list(rejected.items())[:5]:
+                        node = topology.G.nodes[node_id]
+                        node_name = node.get("name", str(node_id))
+                        print(f"      - {node_name}: {', '.join(reasons)}")
+                    if len(rejected) > 5:
+                        print(f"      - ... {len(rejected) - 5} more rejected nodes")
+                self._failed_decisions.append(
+                    {
+                        "app": app_name,
+                        "module": module_name,
+                        "rejected_nodes": rejected,
+                    }
+                )
+                failed += 1
                 skipped += 1
                 continue
 
             # ── Phase 2: Scoring ──────────────────────────────────────────
-            best_node, scores = self._score_nodes(candidates, topology, pod)
+            best_node, scores = self._score_nodes(
+                candidates,
+                topology,
+                pod,
+                accounting,
+            )
 
             # ── Phase 3: Binding ──────────────────────────────────────────
             sim.deploy_module(app_name, module_name, services, [best_node])
 
-            # Resource accounting — deduct from node's available capacity
+            # Resource accounting is centralized so later DriftGuard phases can
+            # reuse the same fit, commit, release, and validation logic.
             node_attrs = topology.G.nodes[best_node]
-            node_attrs["CPU_used"] = node_attrs.get("CPU_used", 0) + pod["CPU_req"]
-            node_attrs["RAM_used"] = node_attrs.get("RAM_used", 0) + pod["RAM_req"]
+            accounting.commit(best_node, app_name, module_name, pod)
 
             # Record decision
             decision = {
@@ -131,6 +167,10 @@ class KubernetesDefaultScheduler(Placement):
                 "score":     round(scores[best_node], 2),
                 "CPU_req":   pod["CPU_req"],
                 "RAM_req":   pod["RAM_req"],
+                "BW_req":    pod["BW_req"],
+                "dominant_share": round(
+                    accounting.dominant_share(best_node, pod), 4
+                ),
             }
             self._decisions.append(decision)
             scheduled += 1
@@ -139,19 +179,28 @@ class KubernetesDefaultScheduler(Placement):
                 print(
                     f"  [bind] {module_name:45s} → {decision['node_name']:20s} "
                     f"score={decision['score']:6.2f}  "
-                    f"CPU+{pod['CPU_req']}  RAM+{pod['RAM_req']}MB"
+                    f"CPU+{pod['CPU_req']}  RAM+{pod['RAM_req']}MB  "
+                    f"BW+{pod['BW_req']}"
                 )
 
         if self.verbose:
             print(
-                f"  → {scheduled} module(s) bound, {skipped} source/sink(s) skipped.\n"
+                f"  → {scheduled} module(s) bound, {failed} failed, "
+                f"{skipped - failed} source/sink(s) skipped."
             )
+            self._print_accounting_debug_summary(accounting)
+            print()
 
     # ------------------------------------------------------------------ #
     #  Phase 1 — Filtering                                                 #
     # ------------------------------------------------------------------ #
 
-    def _filter_nodes(self, topology, pod: dict) -> list:
+    def _filter_nodes(
+        self,
+        topology,
+        pod: dict,
+        accounting: ResourceAccounting,
+    ) -> tuple[list, dict]:
         """
         Return candidate node IDs that pass all filter plugins.
 
@@ -161,36 +210,42 @@ class KubernetesDefaultScheduler(Placement):
         NodeResourcesFit   — requires ``free_cpu >= CPU_req`` AND
                              ``free_ram >= RAM_req``.
         """
-        cpu_req = pod["CPU_req"]
-        ram_req = pod["RAM_req"]
         candidates = []
+        rejected = {}
 
         for node_id in topology.G.nodes:
             node = topology.G.nodes[node_id]
+            reasons = []
 
             # Gateways are transit-only network nodes and must never host modules.
             if node.get("type") == "gateway":
+                rejected[node_id] = ["gateway nodes are transit-only"]
                 continue
 
             # Plugin: NodeUnschedulable
             if node.get("unschedulable", False):
+                rejected[node_id] = ["node is unschedulable"]
                 continue
 
             # Plugin: NodeResourcesFit
-            cpu_free = node.get("CPU", 0) - node.get("CPU_used", 0)
-            ram_free = node.get("RAM", 0) - node.get("RAM_used", 0)
-
-            if cpu_free >= cpu_req and ram_free >= ram_req:
+            reasons.extend(accounting.reasons_not_fit(node_id, pod))
+            if not reasons:
                 candidates.append(node_id)
+            else:
+                rejected[node_id] = reasons
 
-        return candidates
+        return candidates, rejected
 
     # ------------------------------------------------------------------ #
     #  Phase 2 — Scoring                                                   #
     # ------------------------------------------------------------------ #
 
     def _score_nodes(
-        self, candidates: list, topology, pod: dict
+        self,
+        candidates: list,
+        topology,
+        pod: dict,
+        accounting: ResourceAccounting,
     ) -> tuple[int, dict]:
         """
         Score each candidate and return ``(best_node_id, scores_dict)``.
@@ -210,13 +265,14 @@ class KubernetesDefaultScheduler(Placement):
         scores: dict[int, float] = {}
 
         for node_id in candidates:
-            node = topology.G.nodes[node_id]
+            capacity = accounting.node_capacity(node_id)
+            usage = accounting.node_usage(node_id)
 
-            cpu_cap = max(node.get("CPU", 1), 1)   # guard against 0-capacity nodes
-            ram_cap = max(node.get("RAM", 1), 1)
+            cpu_cap = max(capacity["CPU"], 1)   # guard against 0-capacity nodes
+            ram_cap = max(capacity["RAM"], 1)
 
-            cpu_frac = (node.get("CPU_used", 0) + cpu_req) / cpu_cap
-            ram_frac = (node.get("RAM_used", 0) + ram_req) / ram_cap
+            cpu_frac = (usage["CPU"] + cpu_req) / cpu_cap
+            ram_frac = (usage["RAM"] + ram_req) / ram_cap
 
             # Clamp fractions to [0, 1] for numerical safety
             cpu_frac = min(max(cpu_frac, 0.0), 1.0)
@@ -230,6 +286,61 @@ class KubernetesDefaultScheduler(Placement):
         best_node = max(scores, key=lambda n: scores[n])
         return best_node, scores
 
+    def _get_resource_accounting(self, topology) -> ResourceAccounting:
+        if self.resource_accounting is None:
+            self.resource_accounting = ResourceAccounting(
+                topology,
+                default_node_bw=self.default_node_bw,
+            )
+        return self.resource_accounting
+
+    def _print_accounting_debug_summary(
+        self,
+        accounting: ResourceAccounting,
+        max_nodes: int = 8,
+    ) -> None:
+        summary = accounting.summary()
+        totals = summary["totals"]
+        print("  Resource accounting summary:")
+        print(
+            "    totals: "
+            f"CPU {totals['CPU_used']:.2f}/{totals['CPU_capacity']:.2f}, "
+            f"RAM {totals['RAM_used']:.2f}/{totals['RAM_capacity']:.2f} MB, "
+            f"BW {totals['BW_used']:.2f}/{totals['BW_capacity']:.2f}"
+        )
+        print(
+            "    validation: "
+            f"negative_usage_violations="
+            f"{len(summary['negative_usage_violations'])}, "
+            f"capacity_violations={len(summary['capacity_violations'])}"
+        )
+        for violation in summary["negative_usage_violations"][:5]:
+            print(f"      negative usage: {violation}")
+        for violation in summary["capacity_violations"][:5]:
+            print(f"      capacity violation: {violation}")
+
+        used_nodes = [
+            (node_id, node)
+            for node_id, node in summary["nodes"].items()
+            if any(value > 0 for value in node["usage"].values())
+        ]
+        if not used_nodes:
+            print("    used nodes: none")
+            return
+
+        print("    used nodes:")
+        for node_id, node in used_nodes[:max_nodes]:
+            usage = node["usage"]
+            capacity = node["capacity"]
+            print(
+                f"      - {node['name']} ({node_id}, {node['type']}/{node['role']}): "
+                f"CPU {usage['CPU']:.2f}/{capacity['CPU']:.2f}, "
+                f"RAM {usage['RAM']:.2f}/{capacity['RAM']:.2f}, "
+                f"BW {usage['BW']:.2f}/{capacity['BW']:.2f}"
+            )
+        if len(used_nodes) > max_nodes:
+            print(f"      - ... {len(used_nodes) - max_nodes} more used nodes")
+
     # ------------------------------------------------------------------ #
     #  Helpers                                                             #
     # ------------------------------------------------------------------ #
@@ -242,12 +353,15 @@ class KubernetesDefaultScheduler(Placement):
             return "No scheduling decisions recorded."
 
         lines = [
-            f"{'Module':<45} {'Node':<20} {'Score':>6}  {'CPU':>4}  {'RAM (MB)':>9}",
-            "-" * 90,
+            f"{'Module':<45} {'Node':<20} {'Score':>6}  "
+            f"{'CPU':>4}  {'RAM (MB)':>9}  {'BW':>6}  {'DomShare':>8}",
+            "-" * 110,
         ]
         for d in self._decisions:
             lines.append(
                 f"{d['module']:<45} {d['node_name']:<20} "
-                f"{d['score']:>6.2f}  {d['CPU_req']:>4}  {d['RAM_req']:>9}"
+                f"{d['score']:>6.2f}  {d['CPU_req']:>4}  "
+                f"{d['RAM_req']:>9}  {d['BW_req']:>6}  "
+                f"{d['dominant_share']:>8.4f}"
             )
         return "\n".join(lines)
