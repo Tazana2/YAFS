@@ -168,6 +168,10 @@ class KubernetesDefaultScheduler(Placement):
                 "CPU_req":   pod["CPU_req"],
                 "RAM_req":   pod["RAM_req"],
                 "BW_req":    pod["BW_req"],
+                "service_class": pod.get("service_class"),
+                "slo_ms_p99": pod.get("slo_ms_p99"),
+                "allowed_layers": pod.get("allowed_layers", []),
+                "allowed_layers_considered": bool(pod.get("allowed_layers")),
                 "dominant_share": round(
                     accounting.dominant_share(best_node, pod), 4
                 ),
@@ -180,7 +184,11 @@ class KubernetesDefaultScheduler(Placement):
                     f"  [bind] {module_name:45s} → {decision['node_name']:20s} "
                     f"score={decision['score']:6.2f}  "
                     f"CPU+{pod['CPU_req']}  RAM+{pod['RAM_req']}MB  "
-                    f"BW+{pod['BW_req']}"
+                    f"BW+{pod['BW_req']}  class={pod.get('service_class')}  "
+                    f"p99={pod.get('slo_ms_p99')}ms  "
+                    f"dom={decision['dominant_share']:.4f}  "
+                    f"layers={pod.get('allowed_layers') or 'any'} "
+                    f"(checked={decision['allowed_layers_considered']})"
                 )
 
         if self.verbose:
@@ -353,15 +361,22 @@ class KubernetesDefaultScheduler(Placement):
             return "No scheduling decisions recorded."
 
         lines = [
-            f"{'Module':<45} {'Node':<20} {'Score':>6}  "
-            f"{'CPU':>4}  {'RAM (MB)':>9}  {'BW':>6}  {'DomShare':>8}",
-            "-" * 110,
+            f"{'App':<28} {'Module':<36} {'Node':<18} {'Score':>6}  "
+            f"{'CPU':>4}  {'RAM':>7}  {'BW':>6}  {'Class':<24} "
+            f"{'p99':>6}  {'Dom':>7} {'Layers':<14} {'Chk':>3}",
+            "-" * 166,
         ]
         for d in self._decisions:
+            layers = ",".join(d.get("allowed_layers") or []) or "any"
+            service_class = d.get("service_class") or "unknown"
+            slo_ms_p99 = d.get("slo_ms_p99")
+            slo_display = "n/a" if slo_ms_p99 is None else str(slo_ms_p99)
             lines.append(
-                f"{d['module']:<45} {d['node_name']:<20} "
+                f"{d['app']:<28} {d['module']:<36} {d['node_name']:<18} "
                 f"{d['score']:>6.2f}  {d['CPU_req']:>4}  "
-                f"{d['RAM_req']:>9}  {d['BW_req']:>6}  "
-                f"{d['dominant_share']:>8.4f}"
+                f"{d['RAM_req']:>7}  {d['BW_req']:>6}  "
+                f"{service_class:<24} {slo_display:>6}  "
+                f"{d['dominant_share']:>7.4f} {layers:<14} "
+                f"{str(d.get('allowed_layers_considered', False)):>3}"
             )
         return "\n".join(lines)

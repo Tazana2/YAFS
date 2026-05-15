@@ -40,9 +40,43 @@ def create_parking_security_app() -> Application:
     app = Application(name="Parking_Security")
 
     app.set_modules([
-        {"CameraStream":      {"Type": Application.TYPE_SOURCE}},
-        {"VideoPassthrough":  {"RAM": 200, "Type": Application.TYPE_MODULE}},
-        {"CloudVideoStorage": {"Type": Application.TYPE_SINK}},
+        {"CameraStream": {
+            "Type": Application.TYPE_SOURCE,
+            "CPU_req": 0,
+            "RAM_req": 0,
+            "BW_req": 90,
+            "service_class": "parking-video-stream",
+            "slo_ms_p99": 150,
+            "allowed_layers": ["edge"],
+            "preferred_role": "video_ingestion",
+            "priority": 95,
+            "cooldown_windows": 2,
+        }},
+        {"VideoPassthrough": {
+            "RAM": 200,
+            "CPU_req": 1,
+            "RAM_req": 200,
+            "BW_req": 160,
+            "Type": Application.TYPE_MODULE,
+            "service_class": "parking-video-passthrough",
+            "slo_ms_p99": 200,
+            "allowed_layers": ["edge", "fog"],
+            "preferred_role": "video_processing",
+            "priority": 95,
+            "cooldown_windows": 2,
+        }},
+        {"CloudVideoStorage": {
+            "Type": Application.TYPE_SINK,
+            "CPU_req": 0,
+            "RAM_req": 0,
+            "BW_req": 160,
+            "service_class": "parking-video-storage",
+            "slo_ms_p99": 800,
+            "allowed_layers": ["cloud"],
+            "preferred_role": "storage",
+            "priority": 80,
+            "cooldown_windows": 6,
+        }},
     ])
 
     # ── Cámara → Fog: chunk de video H.264 crudo ──────────────────────────

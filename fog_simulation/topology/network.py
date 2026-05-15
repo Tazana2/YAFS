@@ -16,6 +16,17 @@ _TIER_CPU = {
 }
 
 
+_ROLE_BW = {
+    "video_ingestion": 250,
+    "sensor_ingestion": 80,
+    "network_transit": 1000,
+    "video_processing": 800,
+    "sensor_processing": 450,
+    "shared_processing": 900,
+    "cloud_core": 2000,
+}
+
+
 # Link profiles used to emulate realistic heterogeneous backhaul/media.
 # BW and PR map directly to YAFS edge attributes.
 _LINK_PROFILES = {
@@ -61,7 +72,19 @@ def _estimate_watt(cpu_cores, ram_mb, role, rng):
     return max(4, int(round(watt)))
 
 
-def _mk_node(name, zone, layer, role, model, ipt_mips, ram_mb, cost, watt, cpu=None):
+def _mk_node(
+    name,
+    zone,
+    layer,
+    role,
+    model,
+    ipt_mips,
+    ram_mb,
+    cost,
+    watt,
+    cpu=None,
+    bw=None,
+):
     """
     Build a node attribute dict for YAFS.
 
@@ -69,6 +92,7 @@ def _mk_node(name, zone, layer, role, model, ipt_mips, ram_mb, cost, watt, cpu=N
     (Edge GPU vs. Fog Node vs. Regional Fog) get distinct core counts.
     """
     cpu_cores = cpu if cpu is not None else _TIER_CPU.get(layer, 4)
+    bw_capacity = bw if bw is not None else _ROLE_BW.get(role, 250)
     return {
         "name":          name,
         "zone":          zone,
@@ -81,8 +105,10 @@ def _mk_node(name, zone, layer, role, model, ipt_mips, ram_mb, cost, watt, cpu=N
         "WATT":          watt,
         # --- K8s scheduler resource accounting ---
         "CPU":           cpu_cores,
+        "BW":            bw_capacity,
         "CPU_used":      0,
         "RAM_used":      0,
+        "BW_used":       0,
         "unschedulable": False,
     }
 
@@ -247,7 +273,7 @@ def create_edge_fog_cloud_topology(with_gateways: bool = False, gateways_per_zon
         )
 
     # Cloud centralizado: un solo nodo para servicios gestionados.
-    # RAM dimensionada para alojar MLOps y backends de almacenamiento.
+    # RAM dimensionada para alojar MLOps y backends cloud de varias apps.
     cloud_nodes = []
     node_id = next_id
     next_id += 1
@@ -260,10 +286,10 @@ def create_edge_fog_cloud_topology(with_gateways: bool = False, gateways_per_zon
         role="cloud_core",
         model="Cloud Service Hub",
         ipt_mips=100000,
-        ram_mb=65536,
+        ram_mb=262144,
         cost=5,
         watt=180,
-        cpu=16,
+        cpu=128,
     )
 
     for node_id, attrs in all_nodes.items():

@@ -25,6 +25,20 @@ DEFAULT_SERVICE_PROFILE: dict[str, Any] = {
 }
 
 
+def with_service_metadata(
+    attrs: Optional[dict[str, Any]] = None,
+    **metadata: Any,
+) -> dict[str, Any]:
+    """Return ``attrs`` with explicit scheduler metadata added.
+
+    Application factories can keep legacy fields such as ``RAM`` while making
+    the scheduler-facing profile explicit in ``app.data``.
+    """
+    service_attrs = dict(attrs or {})
+    service_attrs.update(metadata)
+    return service_attrs
+
+
 def get_module_attrs(app, module_name: str) -> dict[str, Any]:
     """Return raw metadata for ``module_name`` from ``app.data``."""
     for entry in getattr(app, "data", []) or []:

@@ -36,9 +36,43 @@ def create_parking_intelligence_app() -> Application:
     app = Application(name="Parking_Intelligence")
 
     app.set_modules([
-        {"CameraCapture":    {"Type": Application.TYPE_SOURCE}},
-        {"YOLOv8_Inference": {"RAM": 700,  "Type": Application.TYPE_MODULE}},
-        {"CloudRegistry":    {"Type": Application.TYPE_SINK}},
+        {"CameraCapture": {
+            "Type": Application.TYPE_SOURCE,
+            "CPU_req": 0,
+            "RAM_req": 0,
+            "BW_req": 35,
+            "service_class": "parking-video-ingestion",
+            "slo_ms_p99": 250,
+            "allowed_layers": ["edge"],
+            "preferred_role": "video_ingestion",
+            "priority": 85,
+            "cooldown_windows": 2,
+        }},
+        {"YOLOv8_Inference": {
+            "RAM": 700,
+            "CPU_req": 2,
+            "RAM_req": 700,
+            "BW_req": 70,
+            "Type": Application.TYPE_MODULE,
+            "service_class": "parking-inference",
+            "slo_ms_p99": 500,
+            "allowed_layers": ["fog"],
+            "preferred_role": "video_processing",
+            "priority": 85,
+            "cooldown_windows": 3,
+        }},
+        {"CloudRegistry": {
+            "Type": Application.TYPE_SINK,
+            "CPU_req": 0,
+            "RAM_req": 0,
+            "BW_req": 8,
+            "service_class": "parking-registry",
+            "slo_ms_p99": 1000,
+            "allowed_layers": ["cloud"],
+            "preferred_role": "storage",
+            "priority": 60,
+            "cooldown_windows": 5,
+        }},
     ])
 
     # ── Cámara → Fog: frame H.264 para inferencia ──────────────────────────
