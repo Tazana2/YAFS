@@ -9,7 +9,11 @@ from fog_simulation.topology           import create_edge_fog_cloud_topology
 from fog_simulation.visualization      import visualize_topology, create_deployment_diagram
 from fog_simulation.recording          import SimulationRecorder
 from fog_simulation.simulation         import run_simulation
-from fog_simulation.analysis           import analyze_results
+from fog_simulation.analysis           import (
+    analyze_results,
+    export_resource_usage_outputs,
+    export_slo_outputs,
+)
 
 
 def main():
@@ -85,6 +89,14 @@ def main():
         title_suffix="Estado final de scheduling (pods por nodo)",
     )
 
+    # ── 5.2 Gráficas CPU/RAM por nodo ─────────────────────────────────
+    print("\nPaso 5.2: Generando gráficas de uso CPU/RAM por nodo...")
+    export_resource_usage_outputs(results_path, nodes_info)
+
+    # ── 5.3 Reporte SLO/latencia ──────────────────────────────────────
+    print("\nPaso 5.3: Generando reporte SLO/latencia...")
+    export_slo_outputs(results_path, window_size=250, top_n=10)
+
     # ── 6. Video ──────────────────────────────────────────────────────
     print("\nPaso 6: Generando video de la simulación...")
     recorder.make_video(
@@ -94,7 +106,7 @@ def main():
 
     # ── 7. Análisis ───────────────────────────────────────────────────
     print("\nPaso 7: Analizando resultados...")
-    analyze_results(results_path, nodes_info)
+    analyze_results(results_path, nodes_info, export_resource_graphs=False)
 
     # ── Resumen ───────────────────────────────────────────────────────
     print("=" * 70)
@@ -112,6 +124,10 @@ def main():
     print("   • resource_usage/node_resource_usage_timeline.csv — Serie temporal CPU/RAM")
     print("   • cpu_usage/node_XX_*_cpu.png — Gráficas de CPU por nodo")
     print("   • ram_usage/node_XX_*_ram.png — Gráficas de RAM por nodo")
+    print("   • slo_summary.csv       — Métricas p95/p99/jitter/SLO por servicio")
+    print("   • slo_summary_window_250.csv — Métricas SLO por ventana")
+    print("   • slo_report.html       — Reporte visual SLO/latencia")
+    print("   • figures/*.png         — Gráficas p99, jitter, SLO y enlaces")
     print("   • simulation_video.mp4    — Video de la simulación")
     print()
     print("Aplicaciones simuladas:")

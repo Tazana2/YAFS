@@ -10,6 +10,12 @@ from fog_simulation.applications import (
     create_sensor_climatology_app,
     create_video_analytics_app,
 )
+from fog_simulation.simulation.slo_monitor import (
+    build_service_metadata,
+    compute_latency_metrics,
+    load_traces,
+    save_summary,
+)
 
 
 def _module_resource_requirements() -> dict[tuple[str, str], tuple[float, float]]:
@@ -227,7 +233,123 @@ def _export_node_resource_charts(results_path: Path, nodes_info: dict, node_seri
     return cpu_output_dir, cpu_generated, ram_output_dir, ram_generated
 
 
-def analyze_results(results_path, nodes_info: dict):
+def export_resource_usage_outputs(results_path, nodes_info: dict):
+    """
+    Exporta CSV temporal y graficas CPU/RAM por nodo.
+
+    Esta funcion existe para que el flujo principal de ``uv run fog_simulation``
+    genere las graficas como un paso explicito, sin depender de que el reporte
+    textual completo se ejecute despues.
+    """
+    try:
+        import pandas as pd
+    except ImportError:
+        print("❌ pandas no instalado. Instálelo con: pip install pandas")
+        return None
+
+    results_path = Path(results_path)
+
+    try:
+        df_messages = pd.read_csv(results_path / "sim_trace.csv")
+    except FileNotFoundError as exc:
+        print(f"❌ Archivo no encontrado: {exc}")
+        return None
+    except Exception as exc:
+        print(f"❌ Error leyendo CSV: {exc}")
+        return None
+
+    node_series, usage_rows = _build_usage_timeseries(df_messages, nodes_info)
+    if not usage_rows:
+        print("   No se pudo reconstruir la serie temporal de uso por nodo.")
+        return None
+
+    usage_df = pd.DataFrame(usage_rows)
+    output_dir = results_path / "resource_usage"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    usage_csv_path = output_dir / "node_resource_usage_timeline.csv"
+    usage_df.to_csv(usage_csv_path, index=False)
+
+    cpu_dir, cpu_count, ram_dir, ram_count = _export_node_resource_charts(
+        results_path,
+        nodes_info,
+        node_series,
+    )
+
+    result = {
+        "usage_csv_path": usage_csv_path,
+        "cpu_dir": cpu_dir,
+        "cpu_count": cpu_count,
+        "ram_dir": ram_dir,
+        "ram_count": ram_count,
+    }
+
+    print(f"   CSV temporal generado: {usage_csv_path}")
+    if cpu_dir is not None:
+        print(f"   Gráficas CPU         : {cpu_count} archivo(s) en {cpu_dir}")
+        print(f"   Gráficas RAM         : {ram_count} archivo(s) en {ram_dir}")
+
+    return result
+
+
+def export_slo_outputs(results_path, window_size: int = 250, top_n: int = 10):
+    """
+    Exporta resumenes SLO/latencia y genera el reporte HTML completo.
+
+    Sin ``slo_summary.csv`` y ``slo_summary_window_*.csv``, el reporte visual
+    solo puede dibujar metricas derivadas directamente de ``sim_trace_link``.
+    """
+    from fog_simulation.analysis.slo_report import generate_report
+
+    results_path = Path(results_path)
+    window_label = int(window_size) if float(window_size).is_integer() else window_size
+    summary_path = results_path / "slo_summary.csv"
+    window_path = results_path / f"slo_summary_window_{window_label}.csv"
+
+    try:
+        events_df, _links_df = load_traces(results_path)
+    except FileNotFoundError as exc:
+        print(f"❌ Archivo no encontrado: {exc}")
+        return None
+    except Exception as exc:
+        print(f"❌ Error leyendo trazas YAFS: {exc}")
+        return None
+
+    metadata = build_service_metadata()
+    summary_df = compute_latency_metrics(
+        events_df,
+        service_metadata=metadata,
+        window_size=None,
+    )
+    window_df = compute_latency_metrics(
+        events_df,
+        service_metadata=metadata,
+        window_size=window_size,
+    )
+
+    save_summary(summary_df, summary_path)
+    save_summary(window_df, window_path)
+    report = generate_report(
+        results_dir=results_path,
+        top_n=top_n,
+        window_file=window_path,
+        show=False,
+    )
+
+    print(f"   Resumen SLO global  : {summary_path}")
+    print(f"   Resumen SLO ventanas: {window_path}")
+    print(f"   Reporte HTML        : {report['html_path']}")
+    print(f"   Figuras SLO         : {len(report['figure_paths'])} archivo(s) en {report['figures_dir']}")
+    for warning in report["warnings"]:
+        print(f"   ⚠️  {warning}")
+
+    return {
+        "summary_path": summary_path,
+        "window_path": window_path,
+        "report": report,
+    }
+
+
+def analyze_results(results_path, nodes_info: dict, export_resource_graphs: bool = True):
     """
     Imprime un informe detallado a partir de los CSV de YAFS.
 
@@ -374,25 +496,9 @@ def analyze_results(results_path, nodes_info: dict):
     print("USO TEMPORAL DE CPU/RAM POR NODO")
     print("-" * 70)
 
-    node_series, usage_rows = _build_usage_timeseries(df_messages, nodes_info)
-    if usage_rows:
-        usage_df = pd.DataFrame(usage_rows)
-        output_dir = results_path / "resource_usage"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        usage_csv_path = output_dir / "node_resource_usage_timeline.csv"
-        usage_df.to_csv(usage_csv_path, index=False)
-
-        cpu_dir, cpu_count, ram_dir, ram_count = _export_node_resource_charts(
-            results_path,
-            nodes_info,
-            node_series,
-        )
-
-        print(f"\n   CSV temporal generado: {usage_csv_path}")
-        if cpu_dir is not None:
-            print(f"   Gráficas CPU         : {cpu_count} archivo(s) en {cpu_dir}")
-            print(f"   Gráficas RAM         : {ram_count} archivo(s) en {ram_dir}")
+    if export_resource_graphs:
+        export_resource_usage_outputs(results_path, nodes_info)
     else:
-        print("\n   No se pudo reconstruir la serie temporal de uso por nodo.")
+        print("\n   Gráficas CPU/RAM ya generadas en el flujo principal.")
 
     print("\n" + "=" * 70 + "\n")

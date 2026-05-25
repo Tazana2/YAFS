@@ -97,6 +97,11 @@ def generate_report(
         html_path=html_path,
         figures_dir=figures_dir,
         figure_paths=figure_paths,
+        input_files={
+            "Global SLO summary": summary_path,
+            "Window SLO summary": window_path,
+            "Link trace": link_path,
+        },
         summary_df=summary_df,
         warnings=warnings,
         top_n=top_n,
@@ -184,7 +189,12 @@ def _plot_p99_vs_slo(
     if data.empty:
         return _placeholder(figures_dir / FIGURE_NAMES["p99_vs_slo"], "No SLO values available")
     data["slo_ratio"] = data["p99_latency"] / data["slo_ms_p99"].replace(0, pd.NA)
-    data = data.sort_values("slo_ratio", ascending=False).head(top_n)
+    if "slo_margin" not in data.columns:
+        data["slo_margin"] = data["slo_ms_p99"] - data["p99_latency"]
+    data = data.sort_values(
+        ["slo_margin", "slo_ratio"],
+        ascending=[True, False],
+    ).head(top_n)
     labels = [_service_label(row) for _, row in data.iterrows()]
     y = range(len(data))
 
@@ -204,7 +214,7 @@ def _plot_p99_vs_slo(
             ax.text(
                 float(row["p99_latency"]),
                 idx,
-                f" {float(ratio) * 100:.1f}%",
+                f" {float(ratio) * 100:.1f}% of SLO",
                 va="center",
                 fontsize=8,
                 color="#3d3d3d",
@@ -224,6 +234,8 @@ def _plot_slo_margin(
         return _placeholder(figures_dir / FIGURE_NAMES["slo_margin"], "Missing slo_margin")
 
     data = df[df["slo_margin"].notna()].sort_values("slo_margin", ascending=True).head(top_n)
+    if data.empty:
+        return _placeholder(figures_dir / FIGURE_NAMES["slo_margin"], "No SLO margin values available")
     labels = [_service_label(row) for _, row in data.iterrows()]
     colors = ["#bb3e3e" if value < 0 else "#5f9e6e" for value in data["slo_margin"]]
     y = range(len(data))
@@ -250,6 +262,8 @@ def _plot_jitter(
         return _placeholder(figures_dir / FIGURE_NAMES["jitter"], "Missing jitter")
 
     data = df.sort_values("jitter", ascending=False).head(top_n)
+    if data.empty:
+        return _placeholder(figures_dir / FIGURE_NAMES["jitter"], "No jitter rows available")
     labels = [_service_label(row) for _, row in data.iterrows()]
     y = range(len(data))
 
@@ -274,6 +288,8 @@ def _plot_violation_rate(
         return _placeholder(figures_dir / FIGURE_NAMES["violation_rate"], "Missing violation_rate")
 
     data = df.sort_values(["violation_rate", "p99_latency"], ascending=[False, False]).head(top_n)
+    if data.empty:
+        return _placeholder(figures_dir / FIGURE_NAMES["violation_rate"], "No violation-rate rows available")
     labels = [_service_label(row) for _, row in data.iterrows()]
     y = range(len(data))
 
@@ -283,7 +299,10 @@ def _plot_violation_rate(
     ax.invert_yaxis()
     ax.set_xlim(0, max(1.0, float(data["violation_rate"].max()) if len(data) else 1.0))
     ax.set_xlabel("violation rate")
-    ax.set_title("SLO Violation Rate by Service")
+    title = "SLO Violation Rate by Service"
+    if float(pd.to_numeric(data["violation_rate"], errors="coerce").fillna(0).max()) == 0.0:
+        title += " (Nominal: No SLO Violations)"
+    ax.set_title(title)
     ax.grid(axis="x", alpha=0.25)
     return _save(fig, figures_dir / FIGURE_NAMES["violation_rate"])
 
@@ -301,6 +320,7 @@ def _plot_window_p99(
 
     selected = _select_window_services(window_df, summary_df, top_n)
     fig, ax = plt.subplots(figsize=(12, 6.5))
+    plotted = 0
     for key, group in window_df.groupby(_group_cols(window_df), dropna=False):
         label = _key_to_label(key)
         if label not in selected:
@@ -313,6 +333,11 @@ def _plot_window_p99(
             linewidth=1.8,
             label=label,
         )
+        plotted += 1
+
+    if plotted == 0:
+        plt.close(fig)
+        return _placeholder(figures_dir / FIGURE_NAMES["window_p99"], "No selected window rows")
 
     ax.set_xlabel("window start")
     ax.set_ylabel("p99 latency")
@@ -388,14 +413,21 @@ def _plot_top_link_latency(
     grouped = (
         df.dropna(subset=["latency"])
         .groupby(group_cols, dropna=False)["latency"]
-        .agg(count="count", mean_latency="mean", p95_latency=lambda s: s.quantile(0.95))
+        .agg(
+            count="count",
+            mean_latency="mean",
+            p95_latency=lambda s: s.quantile(0.95),
+            p99_latency=lambda s: s.quantile(0.99),
+        )
         .reset_index()
         .sort_values("p95_latency", ascending=False)
         .head(top_n)
     )
+    if grouped.empty:
+        return _placeholder(figures_dir / FIGURE_NAMES["top_link"], "No link latency rows available")
     labels = [
-        f"{int(row.src)} -> {int(row.dst)}"
-        + (f" | {row.message}" if "message" in grouped.columns else "")
+        f"{_display_value(row.src)} -> {_display_value(row.dst)}"
+        + (f" | {_display_value(row.message)}" if "message" in grouped.columns else "")
         for _, row in grouped.iterrows()
     ]
     y = range(len(grouped))
@@ -403,6 +435,7 @@ def _plot_top_link_latency(
     fig, ax = plt.subplots(figsize=(11, max(4.5, 0.46 * len(grouped) + 1.6)))
     ax.barh(y, grouped["p95_latency"], color="#4d8f8f", label="p95")
     ax.scatter(grouped["mean_latency"], list(y), color="#1f2a36", s=28, label="mean")
+    ax.scatter(grouped["p99_latency"], list(y), color="#b84a62", s=28, label="p99")
     ax.set_yticks(list(y), labels)
     ax.invert_yaxis()
     ax.set_xlabel("link latency")
@@ -416,6 +449,7 @@ def _write_html_report(
     html_path: Path,
     figures_dir: Path,
     figure_paths: dict[str, Path],
+    input_files: dict[str, Path],
     summary_df: pd.DataFrame,
     warnings: list[str],
     top_n: int,
@@ -427,6 +461,14 @@ def _write_html_report(
         if "p99_latency" in summary_df.columns
         else pd.DataFrame(),
         ["app", "module", "message", "count", "p95_latency", "p99_latency", "jitter", "slo_ms_p99"],
+    )
+    riskiest_margin = _table_html(
+        summary_df[summary_df["slo_margin"].notna()]
+        .sort_values("slo_margin", ascending=True)
+        .head(top_n)
+        if "slo_margin" in summary_df.columns
+        else pd.DataFrame(),
+        ["app", "module", "message", "count", "p99_latency", "slo_ms_p99", "slo_margin", "violation_rate"],
     )
     violations = summary_df
     if "slo_violated" in summary_df.columns:
@@ -465,6 +507,15 @@ def _write_html_report(
             f"<li>{html.escape(w)}</li>" for w in warnings
         ) + "</ul>"
 
+    input_files_html = "<ul>" + "".join(
+        "<li>"
+        f"{html.escape(label)}: "
+        f"{html.escape(str(path))}"
+        f"{' (found)' if path.exists() else ' (missing)'}"
+        "</li>"
+        for label, path in input_files.items()
+    ) + "</ul>"
+
     html_text = f"""<!doctype html>
 <html lang="en">
 <head>
@@ -493,12 +544,17 @@ def _write_html_report(
     <div class="metric">SLO-violated groups<strong>{summary['violated_groups']}</strong></div>
     <div class="metric">Maximum p99 latency<strong>{summary['max_p99']:.2f}</strong></div>
     <div class="metric">Maximum jitter<strong>{summary['max_jitter']:.2f}</strong></div>
+    <div class="metric">Maximum violation rate<strong>{summary['max_violation_rate']:.3f}</strong></div>
   </div>
+  <h2>Input Files Used</h2>
+  {input_files_html}
   <h2>Interpretation</h2>
   <p class="note">{html.escape(interpretation)}</p>
   {warning_html}
   <h2>Top p99 Latency</h2>
   {top_p99}
+  <h2>Riskiest SLO Margins</h2>
+  {riskiest_margin}
   <h2>SLO Violations</h2>
   {violation_html}
   {''.join(image_blocks)}
@@ -516,14 +572,25 @@ def _summary_counts(df: pd.DataFrame) -> dict[str, float]:
             "violated_groups": 0,
             "max_p99": 0.0,
             "max_jitter": 0.0,
+            "max_violation_rate": 0.0,
         }
     return {
         "groups": int(len(df)),
         "events": int(pd.to_numeric(df.get("count", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()),
         "violated_groups": int(df["slo_violated"].astype(bool).sum()) if "slo_violated" in df.columns else 0,
-        "max_p99": float(pd.to_numeric(df.get("p99_latency", pd.Series([0])), errors="coerce").max() or 0.0),
-        "max_jitter": float(pd.to_numeric(df.get("jitter", pd.Series([0])), errors="coerce").max() or 0.0),
+        "max_p99": _numeric_max(df, "p99_latency"),
+        "max_jitter": _numeric_max(df, "jitter"),
+        "max_violation_rate": _numeric_max(df, "violation_rate"),
     }
+
+
+def _numeric_max(df: pd.DataFrame, column: str) -> float:
+    if column not in df.columns:
+        return 0.0
+    values = pd.to_numeric(df[column], errors="coerce").dropna()
+    if values.empty:
+        return 0.0
+    return float(values.max())
 
 
 def _table_html(df: pd.DataFrame, columns: list[str]) -> str:
@@ -575,6 +642,14 @@ def _service_label(row: pd.Series) -> str:
         if col in row and pd.notna(row[col]):
             parts.append(str(row[col]))
     return " / ".join(parts) or "all"
+
+
+def _display_value(value) -> str:
+    if pd.isna(value):
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
 
 
 def _has_columns(
