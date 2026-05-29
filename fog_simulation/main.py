@@ -17,7 +17,10 @@ from fog_simulation.analysis           import (
 
 
 def main():
-    random.seed(42)
+    seed = 42
+    topology_seed = 42
+    routing_policy = "hop"
+    random.seed(seed)
 
     print("\n" + "=" * 70)
     print("  SIMULACION — CIUDAD INTELIGENTE MULTIAPP")
@@ -29,6 +32,7 @@ def main():
     topology, positions, nodes_info = create_edge_fog_cloud_topology(
         with_gateways=True,
         gateways_per_zone=1,
+        seed=topology_seed,
     )
     n_cameras = sum(1 for a in nodes_info.values() if a["type"] == "edge")
     n_gateways = sum(1 for a in nodes_info.values() if a["type"] == "gateway")
@@ -75,7 +79,18 @@ def main():
 
     # ── 5. Simulación ─────────────────────────────────────────────────
     print("\nPaso 5: Ejecutando simulación...")
-    sim, results_path = run_simulation(topology, stop_time=50_000, recorder=recorder)
+    sim, results_path = run_simulation(
+        topology,
+        stop_time=50_000,
+        recorder=recorder,
+        routing_policy=routing_policy,
+        seed=seed,
+        topology_params={
+            "with_gateways": True,
+            "gateways_per_zone": 1,
+            "seed": topology_seed,
+        },
+    )
 
     # ── 5.1 Mapa de scheduling (pods por nodo) ───────────────────────
     print("\nPaso 5.1: Exportando mapa de scheduling (pods por nodo)...")

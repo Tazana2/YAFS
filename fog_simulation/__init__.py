@@ -13,6 +13,7 @@ from fog_simulation.applications  import (
 from fog_simulation.recording     import SimulationRecorder
 from fog_simulation.visualization import visualize_topology, create_deployment_diagram
 from fog_simulation.simulation    import run_simulation, KubernetesDefaultScheduler
+from fog_simulation.simulation    import LatencyResourceAwareScheduler
 from fog_simulation.analysis      import analyze_results
 
 __all__ = [
@@ -31,6 +32,7 @@ __all__ = [
     # simulation
     "run_simulation",
     "KubernetesDefaultScheduler",
+    "LatencyResourceAwareScheduler",
     # analysis
     "analyze_results",
 ]

@@ -113,7 +113,11 @@ def _mk_node(
     }
 
 
-def create_edge_fog_cloud_topology(with_gateways: bool = False, gateways_per_zone: int = 1):
+def create_edge_fog_cloud_topology(
+    with_gateways: bool = False,
+    gateways_per_zone: int = 1,
+    seed: int = 42,
+):
     """Crea una topologia por zonas con enlaces heterogeneos y conectividad parcial.
 
     Parameters
@@ -122,11 +126,13 @@ def create_edge_fog_cloud_topology(with_gateways: bool = False, gateways_per_zon
         Si True, inserta nodos gateway de transito entre edge y fog.
     gateways_per_zone : int, optional
         Cantidad de gateways por zona cuando ``with_gateways`` esta activo.
+    seed : int, optional
+        Seed used for deterministic topology heterogeneity and coordinates.
     """
     t = Topology()
     G = nx.DiGraph()
 
-    rng = random.Random(42)
+    rng = random.Random(seed)
     positions = {}
     all_nodes = {}
 
