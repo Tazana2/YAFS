@@ -3,6 +3,7 @@ from collections import Counter
 import networkx as nx
 
 from yafs.selection import Selection
+from yafs.core import transmission_time_from_bytes
 
 
 class DeviceSpeedAwareRouting(Selection):
@@ -155,3 +156,96 @@ class DeviceSpeedAwareRouting(Selection):
                 return [concPath], des
             else:
                 return [], []
+
+
+class LatencyAwareRouting(DeviceSpeedAwareRouting):
+    """
+    Select the service instance with the lowest estimated network-latency path.
+
+    Edge cost uses propagation delay (``PR`` or ``latency``) plus a
+    bandwidth-dependent transmission term when ``BW`` and message size are
+    available. If an edge has no latency or bandwidth attributes, the cost
+    falls back to one hop so legacy topologies remain usable.
+    """
+
+    def compute_BEST_DES(self, node_src, alloc_DES, sim, DES_dst, message):
+        try:
+            best_cost = float("inf")
+            min_path = []
+            best_des = None
+            candidates_same_cost = []
+
+            for des_id in DES_dst:
+                node_dst = alloc_DES[des_id]
+                path = list(
+                    nx.shortest_path(
+                        sim.topology.G,
+                        source=node_src,
+                        target=node_dst,
+                        weight=lambda _u, _v, attrs: self.edge_weight(attrs, message),
+                    )
+                )
+                cost = self.path_cost(sim.topology.G, path, message)
+
+                if cost < best_cost:
+                    best_cost = cost
+                    min_path = path
+                    best_des = des_id
+                    candidates_same_cost = []
+                elif cost == best_cost:
+                    if len(candidates_same_cost) == 0 and best_des is not None:
+                        candidates_same_cost.append(best_des)
+                    candidates_same_cost.append(des_id)
+
+            if len(candidates_same_cost) > 0:
+                best_index = 0
+                min_counter = float("inf")
+                for idx, service in enumerate(candidates_same_cost):
+                    if service not in self.counter:
+                        return min_path, service
+                    if self.counter[service] < min_counter:
+                        min_counter = self.counter[service]
+                        best_index = idx
+                return min_path, candidates_same_cost[best_index]
+            return min_path, best_des
+
+        except (nx.NetworkXNoPath, nx.NodeNotFound):
+            self.logger.warning(
+                "There is no path between two nodes: %s - %s ", node_src, message.dst
+            )
+            return [], None
+
+    @classmethod
+    def edge_weight(cls, attrs, message=None):
+        propagation = cls._first_numeric(attrs, ("latency", "PR"), None)
+        bandwidth = cls._first_numeric(attrs, ("BW", "bandwidth", "BANDWIDTH"), None)
+
+        if propagation is None and bandwidth is None:
+            return 1.0
+
+        cost = float(propagation or 0.0)
+        if bandwidth is not None and bandwidth > 0 and message is not None:
+            cost += transmission_time_from_bytes(getattr(message, "bytes", 0), bandwidth)
+        return max(cost, 0.0)
+
+    @classmethod
+    def path_cost(cls, graph, path, message=None):
+        if len(path) <= 1:
+            return 0.0
+        total = 0.0
+        for src, dst in zip(path[:-1], path[1:]):
+            total += cls.edge_weight(graph.edges[src, dst], message)
+        return total
+
+    @staticmethod
+    def _first_numeric(attrs, keys, default):
+        for key in keys:
+            if key in attrs:
+                try:
+                    value = attrs[key]
+                    if value is None:
+                        continue
+                    return float(value)
+                except (TypeError, ValueError):
+                    continue
+        return default

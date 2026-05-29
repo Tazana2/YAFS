@@ -24,6 +24,21 @@ EVENT_UP_ENTITY = "node_up"
 EVENT_DOWN_ENTITY = "node_down"
 
 NETWORK_LIMIT = 1000000000
+BYTES_TO_BITS = 8
+BITS_PER_MEGABIT = 1000000.0
+
+
+def transmission_time_from_bytes(message_bytes, bandwidth_mbps):
+    """
+    Return transmission time for a payload in bytes over a Mbps link.
+
+    YAFS topology edges store ``BW`` as megabits per simulation time unit and
+    ``PR`` as propagation delay in simulation time units. ``Message.bytes`` is
+    therefore converted to bits before dividing by link capacity.
+    """
+    return (float(message_bytes) * BYTES_TO_BITS) / (
+        float(bandwidth_mbps) * BITS_PER_MEGABIT
+    )
 
 class Sim:
     """
@@ -289,11 +304,11 @@ class Sim:
                 """
                 Computing message latency
                 """
-                size_bits = message.bytes
-                #size_bits = message.bytes * 8
                 try:
-                   # transmit = size_bits / (self.topology.get_edge(link)[Topology.LINK_BW] * 1000000.0)  # MBITS!
-                    transmit = size_bits / (self.topology.get_edge(link)[Topology.LINK_BW] * 1000000.0)  # MBITS!
+                    transmit = transmission_time_from_bytes(
+                        message.bytes,
+                        self.topology.get_edge(link)[Topology.LINK_BW],
+                    )
                     propagation = self.topology.get_edge(link)[Topology.LINK_PR]
                     latency_msg_link = transmit + propagation
 

@@ -18,7 +18,9 @@ class Message:
             Instead of MIPS, we use IPT since the time is relative to the
             simulation units.
 
-        bytes (int): Size in bytes (default 0).
+        bytes (int): Payload size in bytes (default 0). Network transmission
+            code converts this value to bits when using bandwidth expressed
+            in megabits per simulation time unit.
 
     Internal attributes used in :mod:`yafs.core`:
 
@@ -162,7 +164,7 @@ class Application:
             if type_ == self.TYPE_SOURCE:
                 self.modules_src.append(name)
             elif type_ == self.TYPE_SINK:
-                self.modules_sink = name
+                self.modules_sink.append(name)
 
             self.modules.append(name)
 
