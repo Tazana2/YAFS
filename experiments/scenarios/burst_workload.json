@@ -1,0 +1,29 @@
+{
+  "scenario_name": "burst_workload",
+  "description": "Applies a deterministic high-arrival-rate burst window to all source distributions.",
+  "stop_time": 3000,
+  "schedulers": ["default", "latency_resource"],
+  "routing_policies": ["latency"],
+  "seeds": [1, 2, 3, 4, 5],
+  "topology_seed": "same_as_seed",
+  "top_n": 10,
+  "generate_reports": true,
+  "topology_params": {
+    "with_gateways": true,
+    "gateways_per_zone": 1
+  },
+  "workload_params": {
+    "video_rate_multiplier": 1.0,
+    "sensor_rate_multiplier": 1.0,
+    "platform_rate_multiplier": 1.0,
+    "video_message_size_multiplier": 1.0,
+    "sensor_message_size_multiplier": 1.0,
+    "burst_enabled": true,
+    "burst_start": 750,
+    "burst_end": 1800,
+    "burst_multiplier": 3.0
+  },
+  "stress_profile": {
+    "type": "burst_workload"
+  }
+}

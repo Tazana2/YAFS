@@ -1,0 +1,19 @@
+{
+  "scenario_name": "nominal",
+  "description": "Baseline smart city workload with default topology and no induced degradation.",
+  "stop_time": 1000,
+  "topology": {
+    "with_gateways": true,
+    "gateways_per_zone": 1
+  },
+  "workload": {
+    "source_distributions": "runner_defaults"
+  },
+  "schedulers": ["default", "latency_resource"],
+  "routing_policies": ["latency"],
+  "seeds": [1, 2, 3, 4, 5],
+  "topology_seed": "same_as_seed",
+  "top_n": 10,
+  "generate_reports": true,
+  "notes": "Nominal Phase 1 manifest. Workload parameters are currently defined in fog_simulation.simulation.runner."
+}
