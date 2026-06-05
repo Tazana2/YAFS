@@ -48,4 +48,5 @@ packages = [
     "fog_simulation.visualization",
     "fog_simulation.simulation",
     "fog_simulation.analysis",
+    "fog_simulation.experiments",
 ]
